@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Llion</string>
+    <string name="title_activity_main">Llion</string>
+    <string name="package_name">com.llion.app</string>
+    <string name="custom_url_scheme">com.llion.app</string>
+</resources>

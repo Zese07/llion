@@ -1,0 +1,21 @@
+{
+  "name": "Llion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A simple Android portfolio tracker for crypto and manual assets.",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "cap:sync": "npm run build:web && npx cap sync",
+    "android:open": "npx cap open android",
+    "android:run": "npm run build:web && npx cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/filesystem": "^7.1.0",
+    "@capacitor/share": "^7.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}
