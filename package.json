@@ -1,6 +1,6 @@
 {
   "name": "Llion",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A simple Android portfolio tracker for crypto and manual assets.",
   "scripts": {

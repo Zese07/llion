@@ -67,6 +67,8 @@ function getManualCat(catId){
 }
 
 const GOAL_DEFAULT_USD=1000000;
+const GOAL_VALUE_KEY='llion_goal_value';
+const GOAL_CURRENCY_KEY='llion_goal_currency';
 const USD_MAIN_DEFAULTS_KEY='llion_usd_main_defaults_v1';
 const PNL_ACCOUNT_HISTORY_KEY='llion_pnl_account_history';
 const PNL_LAST_CHANGE_BASE_KEY='llion_pnl_last_change_base';
@@ -77,6 +79,8 @@ let goalAmount = (()=>{
   const saved=parseFloat(localStorage.getItem('llion_goal') || '');
   return Number.isFinite(saved) && saved>0 ? saved : GOAL_DEFAULT_USD;
 })();
+let goalValue=null;
+let goalCurrency='USD';
 let pnlHistory = JSON.parse(localStorage.getItem('llion_pnl_history') || '{}');
 let pnlAccountHistory = (()=>{
   try{
@@ -231,6 +235,7 @@ enforceUsdMainDefaultsIfNeeded();
 
 let lastSavedAccountsJSON=localStorage.getItem('llion_accounts')||'[]';
 let lastSavedGoalValue=localStorage.getItem('llion_goal')||String(goalAmount);
+let lastSavedGoalShapeJSON=JSON.stringify({value:goalValue,currency:goalCurrency});
 let dataUpdatedAt=num(localStorage.getItem(DATA_UPDATED_AT_KEY));
 let isOfflineMode=typeof navigator!=='undefined' ? navigator.onLine===false : false;
 if(dataUpdatedAt===null || dataUpdatedAt<=0) dataUpdatedAt=0;
@@ -301,6 +306,24 @@ function persistPhpPerUsd(rate){
   phpPerUsdUpdatedAt=Date.now();
   localStorage.setItem(PHP_PER_USD_CACHE_KEY,JSON.stringify({rate:phpPerUsd,ts:phpPerUsdUpdatedAt}));
 }
+function ensureGoalShape(){
+  let nextCurrency=String(localStorage.getItem(GOAL_CURRENCY_KEY)||goalCurrency||'USD').toUpperCase();
+  if(nextCurrency!=='USD' && nextCurrency!=='PHP') nextCurrency='USD';
+
+  let nextValue=num(goalValue);
+  if(nextValue===null || nextValue<=0){
+    const saved=num(localStorage.getItem(GOAL_VALUE_KEY));
+    if(saved!==null && saved>0) nextValue=saved;
+  }
+  if(nextValue===null || nextValue<=0){
+    nextValue=baseToCurrency(goalAmount,nextCurrency);
+    if(nextValue<=0) nextValue=GOAL_DEFAULT_USD;
+  }
+
+  goalCurrency=nextCurrency;
+  goalValue=nextValue;
+  goalAmount=currencyToBase(goalValue,goalCurrency);
+}
 async function fetchPhpPerUsd(force=false){
   if(!force && phpPerUsdUpdatedAt>0 && Date.now()-phpPerUsdUpdatedAt<PHP_PER_USD_TTL_MS) return phpPerUsd;
   if(phpPerUsdFetchPromise) return phpPerUsdFetchPromise;
@@ -346,6 +369,21 @@ function setDisplayCurrency(next){
     });
   }
 }
+function requestDisplayCurrencyChange(next){
+  const val=String(next||'').toUpperCase();
+  if(!DISPLAY_CURRENCIES.includes(val)) return;
+  if(val===displayCurrency) return;
+
+  const from=displayCurrency;
+  const to=val;
+  openConfirmModal(
+    'Switch display currency?',
+    `This will convert values from ${from} to ${to} for display. Converted amounts may change based on the latest exchange rate.`,
+    `Switch to ${to}`,
+    ()=>setDisplayCurrency(to),
+    'primary'
+  );
+}
 
 function updateCurrencyDropdownUi(){
   const valEl=document.getElementById('currency-dd-val');
@@ -386,7 +424,7 @@ function initCurrencyDropdown(){
     item.addEventListener('click',ev=>{
       ev.stopPropagation();
       const next=item.dataset.currency;
-      if(next) setDisplayCurrency(next);
+      if(next) requestDisplayCurrencyChange(next);
       closeCurrencyDropdown();
     });
   });
@@ -397,6 +435,7 @@ function initCurrencyDropdown(){
 }
 
 restorePriceSnapshots();
+ensureGoalShape();
 
 function ensureCexTokenShape(t){
   if(!t || typeof t!=='object') return {id:uid(),sym:'TOKEN',name:'Token',qty:null,php:0,cgid:null};
@@ -540,7 +579,7 @@ function ensureCexWalletShape(wallet){
 function ensureManualWalletShape(wallet){
   if(!wallet || wallet.type!=='manual' || wallet.cat==='cex') return wallet;
   let currency=String(wallet.amountCurrency||'').toUpperCase();
-  if(currency!=='USD' && currency!=='PHP') currency='USD';
+  if(currency!=='USD' && currency!=='PHP') currency=displayCurrency==='PHP' ? 'PHP' : 'USD';
   let amountValue=num(wallet.amountValue);
   const legacyBase=num(wallet.amount);
   if(amountValue===null || amountValue<0){
@@ -1344,8 +1383,10 @@ async function fetchTokBals(w){
 
 function save(){
   normalizeAccountWallets(accounts);
+  goalAmount=currencyToBase(goalValue,goalCurrency);
   const nextAccountsJSON=JSON.stringify(accounts);
   const nextGoalValue=String(goalAmount);
+  const nextGoalShapeJSON=JSON.stringify({value:goalValue,currency:goalCurrency});
   let changed=false;
   if(nextAccountsJSON!==lastSavedAccountsJSON){
     localStorage.setItem('llion_accounts',nextAccountsJSON);
@@ -1357,9 +1398,15 @@ function save(){
     lastSavedGoalValue=nextGoalValue;
     changed=true;
   }
+  if(nextGoalShapeJSON!==lastSavedGoalShapeJSON){
+    localStorage.setItem(GOAL_VALUE_KEY,String(goalValue));
+    localStorage.setItem(GOAL_CURRENCY_KEY,goalCurrency);
+    lastSavedGoalShapeJSON=nextGoalShapeJSON;
+    changed=true;
+  }
   if(changed) markDataUpdated();
 }
-function fmtGoal(n){return moneySymbol()+fmtUiNumber(phpToDisplay(n),CURRENCY_DECIMALS,CURRENCY_DECIMALS);}
+function fmtGoal(){return currencySymbol(goalCurrency)+fmtUiNumber(goalValue,CURRENCY_DECIMALS,CURRENCY_DECIMALS);}
 function walletDisplayName(w){
   if(w?.type==='crypto') return String(w.name||'').trim() || 'DEX Wallet';
   if(w?.type==='cex') return String(w.name||'').trim() || 'CEX Wallet';
@@ -1404,6 +1451,7 @@ function confirmRenameWallet(){
 }
 
 function openGoalModal(){
+  goalAmount=currencyToBase(goalValue,goalCurrency);
   document.getElementById('goal-input').value=fmtUiInput(phpToDisplay(goalAmount),CURRENCY_DECIMALS);
   const goalLbl=document.getElementById('goal-input-lbl');
   if(goalLbl) goalLbl.textContent=`Goal Amount (${moneySymbol()})`;
@@ -1414,7 +1462,9 @@ function closeGoalModal(){document.getElementById('goalOverlay').classList.remov
 function confirmGoalUpdate(){
   const nextDisplay=parseFloat(document.getElementById('goal-input').value);
   if(!Number.isFinite(nextDisplay) || nextDisplay<=0) return;
-  goalAmount=displayToPhp(nextDisplay);
+  goalCurrency=displayCurrency;
+  goalValue=nextDisplay;
+  goalAmount=currencyToBase(goalValue,goalCurrency);
   closeGoalModal(); save(); render();
 }
 
@@ -1463,6 +1513,8 @@ function makeBackupPayload(){
     data:{
       accounts,
       goalAmount,
+      goalValue,
+      goalCurrency,
       pnlHistory,
       pnlAccountHistory,
       pnlDayOpenAccountHistory,
@@ -1543,6 +1595,11 @@ function parseBackupData(raw){
   if(!Array.isArray(src.accounts)) return null;
 
   const nextGoal=num(src.goalAmount);
+  const nextGoalValue=num(src.goalValue);
+  const nextGoalCurrency=String(src.goalCurrency||'').toUpperCase();
+  const safeGoalCurrency=nextGoalCurrency==='PHP'||nextGoalCurrency==='USD'
+    ? nextGoalCurrency
+    : 'USD';
   const nextPnl=src.pnlHistory && typeof src.pnlHistory==='object' ? src.pnlHistory : {};
   const nextPnlByAcc=src.pnlAccountHistory && typeof src.pnlAccountHistory==='object' ? src.pnlAccountHistory : {};
   const nextPnlDayOpenByAcc=src.pnlDayOpenAccountHistory && typeof src.pnlDayOpenAccountHistory==='object' ? src.pnlDayOpenAccountHistory : {};
@@ -1554,6 +1611,8 @@ function parseBackupData(raw){
   return {
     accounts:src.accounts,
     goalAmount:Number.isFinite(nextGoal) && nextGoal>0 ? nextGoal : GOAL_DEFAULT_USD,
+    goalValue:Number.isFinite(nextGoalValue) && nextGoalValue>0 ? nextGoalValue : null,
+    goalCurrency:safeGoalCurrency,
     pnlHistory:nextPnl,
     pnlAccountHistory:nextPnlByAcc,
     pnlDayOpenAccountHistory:nextPnlDayOpenByAcc,
@@ -1575,6 +1634,9 @@ async function importSettingsData(ev){
     accounts=next.accounts;
     normalizeAccountWallets(accounts);
     goalAmount=next.goalAmount;
+    goalCurrency=next.goalCurrency;
+    goalValue=next.goalValue;
+    ensureGoalShape();
     pnlHistory=next.pnlHistory;
     pnlAccountHistory=next.pnlAccountHistory;
     pnlDayOpenAccountHistory=next.pnlDayOpenAccountHistory;
@@ -1587,6 +1649,8 @@ async function importSettingsData(ev){
 
     localStorage.setItem('llion_accounts',JSON.stringify(accounts));
     localStorage.setItem('llion_goal',String(goalAmount));
+    localStorage.setItem(GOAL_VALUE_KEY,String(goalValue));
+    localStorage.setItem(GOAL_CURRENCY_KEY,goalCurrency);
     localStorage.setItem('llion_pnl_history',JSON.stringify(pnlHistory));
     localStorage.setItem(PNL_ACCOUNT_HISTORY_KEY,JSON.stringify(pnlAccountHistory));
     localStorage.setItem(PNL_DAY_OPEN_ACCOUNT_HISTORY_KEY,JSON.stringify(pnlDayOpenAccountHistory));
@@ -2445,6 +2509,8 @@ function toggleCollapse(accId){
 }
 
 let DR = null; // active drag state
+const DRAG_START_PX=8;
+const DRAG_SWAP_BUFFER_PX=8;
 
 function gripDown(e, type, accId, idx){
   e.preventDefault();
@@ -2462,7 +2528,7 @@ function gripDown(e, type, accId, idx){
 
   row.style.opacity = '0.25';
 
-  DR = { type, accId, idx, row, ghost, offsetY: clientY - rect.top, placeholder: null, targetIdx: idx };
+  DR = { type, accId, idx, row, ghost, offsetY: clientY - rect.top, placeholder: null, targetIdx: idx, startY: clientY, started: false };
 
   const ph = document.createElement('div');
   ph.style.cssText = `height:${rect.height}px;background:rgba(255,255,255,0.03);border:1px dashed var(--border);`;
@@ -2479,24 +2545,38 @@ function gripMove(e){
   if(!DR) return;
   e.preventDefault();
   const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  if(!DR.started){
+    if(Math.abs(clientY-DR.startY)<DRAG_START_PX) return;
+    DR.started=true;
+  }
   DR.ghost.style.top = (clientY - DR.offsetY) + 'px';
 
   let container;
   if(DR.type === 'account') container = document.getElementById('alist');
   else container = DR.row.parentElement;
 
-  const siblings = [...container.querySelectorAll('[data-drag-item]')].filter(s => s !== DR.row);
-  let newTarget = DR.idx;
-  siblings.forEach(sib => {
-    const r = sib.getBoundingClientRect();
-    const sibIdx = parseInt(sib.dataset.dragItem);
-    if(clientY > r.top + r.height / 2) newTarget = sibIdx;
-  });
-  DR.targetIdx = newTarget;
+  const siblings = [...container.querySelectorAll(`[data-drag-type="${DR.type}"]`)].filter(s => s !== DR.row);
+  const ordered = [...siblings].sort((a,b)=>(parseInt(a.dataset.dragItem)-parseInt(b.dataset.dragItem)));
+  if(!ordered.length || !DR.placeholder) return;
 
-  const targetEl = siblings.find(s => parseInt(s.dataset.dragItem) === newTarget);
-  if(targetEl && DR.placeholder) {
-    targetEl.parentNode.insertBefore(DR.placeholder, targetEl.nextSibling);
+  let placed=false;
+  for(const sib of ordered){
+    const r=sib.getBoundingClientRect();
+    const mid=r.top+r.height/2;
+    const sibIdx=parseInt(sib.dataset.dragItem);
+    if(clientY < mid-DRAG_SWAP_BUFFER_PX){
+      sib.parentNode.insertBefore(DR.placeholder,sib);
+      DR.targetIdx=sibIdx;
+      placed=true;
+      break;
+    }
+  }
+
+  if(!placed){
+    const last=ordered[ordered.length-1];
+    const lastIdx=parseInt(last.dataset.dragItem);
+    last.parentNode.insertBefore(DR.placeholder,last.nextSibling);
+    DR.targetIdx=lastIdx+1;
   }
 }
 
@@ -2510,6 +2590,8 @@ function gripUp(){
   DR.ghost.remove();
   DR.row.style.opacity = '';
   if(DR.placeholder) DR.placeholder.remove();
+
+  if(!DR.started){ DR=null; return; }
 
   const from = DR.idx, to = DR.targetIdx;
   const type = DR.type, accId = DR.accId;
@@ -2542,6 +2624,7 @@ function gripUp(){
 
 function render(){
   const list=document.getElementById('alist');list.innerHTML='';
+  goalAmount=currencyToBase(goalValue,goalCurrency);
   let grandTotal=0,holdings=0;
   const accTotals=accounts.map(acc=>{const v=accValue(acc);grandTotal+=v;return{acc,v};});
   const accColorMap=new Map(accounts.map((a,i)=>[a.id,ACC_COLORS[i%ACC_COLORS.length]]));
@@ -2690,7 +2773,7 @@ function render(){
         ensureManualWalletShape(w);
         const mCat=getManualCat(w.cat);
         const baseAmount=manualAmountToBase(w);
-        manualRows+=`<div class="manual-amount-row" data-drag-item="${mi}">
+        manualRows+=`<div class="manual-amount-row" data-drag-type="manual" data-drag-item="${mi}">
           <div class="drag-grip" onmousedown="gripDown(event,'manual',${acc.id},${mi})" ontouchstart="gripDown(event,'manual',${acc.id},${mi})">${svg('grip-vertical',14,'1.75')}</div>
           <div class="manual-ic">${svg(w.lucide||mCat.lucide||'folder',14)}</div>
           <div class="manual-info"><div class="manual-label">${w.name}</div><div class="manual-cat">${mCat.label}</div></div>
@@ -2709,7 +2792,7 @@ function render(){
           const headAddr=c.addrs?.[0]||'';
           const addrLabel=c.addrs?.length>1?`${c.addrs.length} wallets`:headAddr?short(headAddr):'wallet';
           const nativePrice=PRICES[c.sym]||0;
-          chainRows+=`<div class="trow" data-drag-item="${ci}">
+          chainRows+=`<div class="trow" data-drag-type="chain" data-drag-item="${ci}">
             <div class="drag-grip" onmousedown="gripDown(event,'chain',${acc.id},${ci})" ontouchstart="gripDown(event,'chain',${acc.id},${ci})">${svg('grip-vertical',14,'1.75')}</div>
             <div class="tdot"></div>
             <div class="tinfo"><div class="tname">${chainName}<span class="chain-addr">${addrLabel}</span></div><div class="tsym">${fmtEach(nativePrice)}</div></div>
@@ -2722,7 +2805,7 @@ function render(){
             const globalIdx=tokenIndexByKey.get(`${t.chain}::${t.addr}`)??-1;
             const isLast=ti===toks.length-1;
             const tokenPrice=TPRICES[t.addr]??t.php??0;
-            chainRows+=`<div class="tok-indent" data-drag-item="${globalIdx}">
+            chainRows+=`<div class="tok-indent" data-drag-type="token" data-drag-item="${globalIdx}">
               <div class="tokrow">
                 <div class="drag-grip" style="padding-left:4px" onmousedown="gripDown(event,'token',${acc.id},${globalIdx})" ontouchstart="gripDown(event,'token',${acc.id},${globalIdx})">${svg('grip-vertical',14,'1.75')}</div>
                 <div class="tok-line" style="height:${isLast?'50%':'100%'}"></div>
@@ -2770,6 +2853,7 @@ function render(){
 
     const cardEl=document.createElement('div');
     cardEl.className='acard';
+    cardEl.dataset.dragType='account';
     cardEl.dataset.dragItem=aidx;
     cardEl.style.animationDelay=aidx*.06+'s';
     cardEl.style.setProperty('--acc-main',accColor);
@@ -2806,7 +2890,7 @@ function render(){
   if(curEl) curEl.textContent=moneySymbol();
   updateCurrencyDropdownUi();
   const pct=goalAmount>0?Math.min(grandTotal/goalAmount*100,100):0;
-  document.getElementById('goal-label').textContent=`Goal ${fmtGoal(goalAmount)}`;
+  document.getElementById('goal-label').textContent=`Goal ${fmtGoal()}`;
   document.getElementById('goal-pct').textContent=pct.toFixed(PERCENT_DECIMALS)+'%';
   document.getElementById('pfill').style.width=pct+'%';
   document.getElementById('s-a').textContent=accounts.length;
