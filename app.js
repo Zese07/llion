@@ -591,6 +591,30 @@ function ensureManualWalletShape(wallet){
   return wallet;
 }
 
+function ensureCryptoWalletShape(wallet){
+  if(!wallet || wallet.type!=='crypto') return wallet;
+  if(!Array.isArray(wallet.hiddenNetworks)) wallet.hiddenNetworks=[];
+  wallet.hiddenNetworks=[...new Set(wallet.hiddenNetworks.map(n=>String(n||'').trim()).filter(Boolean))];
+  return wallet;
+}
+
+function isWalletNetworkVisible(wallet,networkName){
+  ensureCryptoWalletShape(wallet);
+  const key=String(networkName||'').trim();
+  if(!key) return true;
+  return !(wallet.hiddenNetworks||[]).includes(key);
+}
+
+function visibleDexWalletTotal(wallet){
+  const native=(wallet.nets||[])
+    .filter(n=>isWalletNetworkVisible(wallet,n.chain))
+    .reduce((sum,n)=>sum+(n.bal*(PRICES[n.sym]||0)),0);
+  const tokens=(wallet.toks||[])
+    .filter(t=>isWalletNetworkVisible(wallet,t.chain))
+    .reduce((sum,t)=>sum+(t.bal*(TPRICES[t.addr]??t.php??0)),0);
+  return native+tokens;
+}
+
 function manualAmountToBase(wallet){
   ensureManualWalletShape(wallet);
   return currencyToBase(wallet.amountValue,wallet.amountCurrency);
@@ -602,6 +626,7 @@ function normalizeAccountWallets(accountList){
     a.wallets.forEach(w=>{
       ensureCexWalletShape(w);
       ensureManualWalletShape(w);
+      ensureCryptoWalletShape(w);
     });
   });
 }
@@ -1773,7 +1798,7 @@ function selectValueEditAction(action){
     document.getElementById('act-'+a).classList.toggle('selected', a===action);
   });
   document.getElementById('value-amount-lbl').textContent=action==='adjust'
-    ? `New Total (${currencySymbol(activeCurrency)})`
+    ? `New Amount (${currencySymbol(activeCurrency)})`
     : `Amount (${currencySymbol(activeCurrency)})`;
   if(action==='adjust' && pendingValueEdit){
     const initialInputValue=fmtUiInput(
@@ -1784,6 +1809,11 @@ function selectValueEditAction(action){
     );
     pendingValueEdit.initialInputValue=initialInputValue;
     document.getElementById('value-amount').value=initialInputValue;
+    const i=document.getElementById('value-amount');
+    i.focus();
+    i.select();
+  } else if((action==='income' || action==='expense') && pendingValueEdit){
+    document.getElementById('value-amount').value='0';
     const i=document.getElementById('value-amount');
     i.focus();
     i.select();
@@ -2669,13 +2699,19 @@ function render(){
   const manualWallets=acc.wallets.filter(w=>w.type==='manual'&&w.cat!=='cex');
   const cexWallets=acc.wallets.filter(w=>w.type==='cex');
 
-    let walletRows='';
-    acc.wallets.filter(w=>w.type==='crypto').forEach(w=>{
+    let walletAndChainRows='';
+    const dexWallets=acc.wallets.filter(w=>w.type==='crypto');
+    
+    const walletChainMap={};
+    
+    dexWallets.forEach((w,widx)=>{
+        if(w.hidden) return;
+      ensureCryptoWalletShape(w);
       const menuKey=`dex_${acc.id}_${w.id}`;
-      const dexPhp=dexWalletTotal(w);
+      const dexPhp=visibleDexWalletTotal(w);
       const isSol = w.chain === 'sol';
       const offlineBadge=isOfflineMode?` <span class="offline-badge">offline</span>`:'';
-      walletRows+=`<div class="wrow">
+      walletAndChainRows+=`<div class="wrow">
         <div class="manual-ic">${svg(isSol ? 'banknote' : 'link',12,'1.75')}</div>
         <div class="wrow-info"><div class="wrow-name">${walletDisplayName(w)}</div><div class="wrow-addr">${walletMetaLabel(w)}${offlineBadge}</div></div>
         <div class="tright"><div class="tphp-total">${fmt(dexPhp)}</div></div>
@@ -2683,13 +2719,84 @@ function render(){
         <button class="dots-btn" onclick="toggleMenu(event,'${menuKey}')">${svg('ellipsis',14,'1.75')}</button>
         <div class="ctx-menu" id="menu-${menuKey}" style="display:none">
           <button class="ctx-item" onclick="openRenameWalletModal(${acc.id},${w.id})">Rename wallet</button>
+          <button class="ctx-item" onclick="openNetworkVisibilityModal(${acc.id},${w.id})">Manage networks</button>
         </div>
         <button class="wrow-del" onclick="removeWallet(${acc.id},${w.id})">${svg('x',11,'1.75')}</button>
       </div>`;
+      
+      const wChainMap={}, wTokMap={};
+      (w.nets||[]).filter(n=>isWalletNetworkVisible(w,n.chain)).forEach(n=>{
+        const val=n.bal*(PRICES[n.sym]||0);
+        if(!wChainMap[n.chain])wChainMap[n.chain]={sym:n.sym,totalBal:0,totalPhp:0,wId:w.id,addrs:[]};
+        wChainMap[n.chain].totalBal+=n.bal;
+        wChainMap[n.chain].totalPhp+=val;
+        if(!wChainMap[n.chain].addrs.includes(w.addr))wChainMap[n.chain].addrs.push(w.addr);
+      });
+      (w.toks||[]).filter(t=>isWalletNetworkVisible(w,t.chain)).forEach(t=>{
+        const val=t.bal*(TPRICES[t.addr]??t.php??0);
+        if(!wTokMap[t.chain])wTokMap[t.chain]=[];
+        wTokMap[t.chain].push({t,wId:w.id,val,wAddr:w.addr});
+      });
+      if(w.chain==='sol'&&Array.isArray(w.toks)){
+        w.toks.filter(t=>isWalletNetworkVisible(w,t.chain||'Solana')).forEach(t=>{
+          if(!wTokMap['Solana'])wTokMap['Solana']=[];
+          if(!wTokMap['Solana'].some(x=>x.t.addr===t.addr)){
+            wTokMap['Solana'].push({t,wId:w.id,val:t.bal*(TPRICES[t.addr]??t.php??0),wAddr:w.addr});
+          }
+        });
+      }
+      
+      let wChainEntries=Object.entries(wChainMap);
+      if(acc.chainOrder?.length){
+        wChainEntries.sort((a,b)=>{
+          const ai=acc.chainOrder.indexOf(a[0]),bi=acc.chainOrder.indexOf(b[0]);
+          if(ai===-1&&bi===-1)return b[1].totalPhp-a[1].totalPhp;
+          if(ai===-1)return 1;if(bi===-1)return -1;return ai-bi;
+        });
+      } else { wChainEntries.sort((a,b)=>b[1].totalPhp-a[1].totalPhp); }
+      
+      wChainEntries.forEach(([chainName,c],ci)=>{
+        const chainSafe=String(chainName).replace(/'/g,"\\'");
+        const headAddr=c.addrs?.[0]||'';
+        const addrLabel=c.addrs?.length>1?`${c.addrs.length} wallets`:headAddr?short(headAddr):'wallet';
+        const nativePrice=PRICES[c.sym]||0;
+        walletAndChainRows+=`<div class="trow" data-drag-type="chain" data-drag-item="${ci}">
+          <div class="drag-grip" onmousedown="gripDown(event,'chain',${acc.id},${ci})" ontouchstart="gripDown(event,'chain',${acc.id},${ci})">${svg('grip-vertical',14,'1.75')}</div>
+          <div class="tdot"></div>
+          <div class="tinfo"><div class="tname">${chainName}<span class="chain-addr">${addrLabel}</span></div><div class="tsym">${fmtEach(nativePrice)}</div></div>
+          <div class="tright"><div class="tbal">${fmtUiNumber(c.totalBal,TOKEN_DECIMALS,TOKEN_DECIMALS)} ${c.sym}</div><div class="tphp-native">${fmt(c.totalPhp)}</div></div>
+          <button class="icon-btn" onclick="openTokModal(${acc.id},${c.wId},'${chainSafe}')">${svg('plus',11,'2')}</button>
+        </div>`;
+        
+        const toks=wTokMap[chainName]||[];
+        toks.forEach(({t,wId,val},ti)=>{
+          const isLast=ti===toks.length-1;
+          const tokenPrice=TPRICES[t.addr]??t.php??0;
+          const globalIdx=(acc.tokOrder||[]).indexOf(t.addr);
+          walletAndChainRows+=`<div class="tok-indent" data-drag-type="token" data-drag-item="${globalIdx}">
+            <div class="tokrow">
+              <div class="drag-grip" style="padding-left:4px" onmousedown="gripDown(event,'token',${acc.id},${globalIdx})" ontouchstart="gripDown(event,'token',${acc.id},${globalIdx})">${svg('grip-vertical',14,'1.75')}</div>
+              <div class="tok-line" style="height:${isLast?'50%':'100%'}"></div>
+              <div class="tok-corner"></div>
+              <div class="tdot erc"></div>
+              <div class="tinfo">
+                <div class="tname" style="font-size:12px">${t.sym}</div>
+                <div class="tsym">${t.name} | ${fmtEach(tokenPrice)}</div>
+              </div>
+              <div class="tright">
+                <div class="tbal">${fmtUiNumber(t.bal,TOKEN_DECIMALS,TOKEN_DECIMALS)} ${t.sym}</div>
+                <div class="${val>0?'tphp-erc':'tphp-dim'}">${val>0?fmt(val):'no price'}</div>
+              </div>
+              <button class="tok-remove" onclick="removeTok(${acc.id},${wId},'${t.addr}','${t.chain}')">${svg('x',10,'1.75')}</button>
+            </div>
+          </div>`;
+        });
+      });
     });
 
     let cexRows='';
     cexWallets.forEach(w=>{
+        if(w.hidden) return;
       const menuKey=`cex_${acc.id}_${w.id}`;
       const total=cexWalletTotal(w);
       const offlineBadge=isOfflineMode?` <span class="offline-badge">offline</span>`:'';
@@ -2770,6 +2877,7 @@ function render(){
     if(manualWallets.length){
       manualRows+=`<div class="sec-head">Manual</div>`;
       manualWallets.forEach((w,mi)=>{
+          if(w.hidden) return;
         ensureManualWalletShape(w);
         const mCat=getManualCat(w.cat);
         const baseAmount=manualAmountToBase(w);
@@ -2785,67 +2893,10 @@ function render(){
     }
 
     let chainRows='';
-    if(hasCrypto){
-      if(chainEntries.length || allToks.length){
-        chainEntries.forEach(([chainName,c],ci)=>{
-          const chainSafe=String(chainName).replace(/'/g,"\\'");
-          const headAddr=c.addrs?.[0]||'';
-          const addrLabel=c.addrs?.length>1?`${c.addrs.length} wallets`:headAddr?short(headAddr):'wallet';
-          const nativePrice=PRICES[c.sym]||0;
-          chainRows+=`<div class="trow" data-drag-type="chain" data-drag-item="${ci}">
-            <div class="drag-grip" onmousedown="gripDown(event,'chain',${acc.id},${ci})" ontouchstart="gripDown(event,'chain',${acc.id},${ci})">${svg('grip-vertical',14,'1.75')}</div>
-            <div class="tdot"></div>
-            <div class="tinfo"><div class="tname">${chainName}<span class="chain-addr">${addrLabel}</span></div><div class="tsym">${fmtEach(nativePrice)}</div></div>
-            <div class="tright"><div class="tbal">${fmtUiNumber(c.totalBal,TOKEN_DECIMALS,TOKEN_DECIMALS)} ${c.sym}</div><div class="tphp-native">${fmt(c.totalPhp)}</div></div>
-            <button class="icon-btn" onclick="openTokModal(${acc.id},${c.wId},'${chainSafe}')">${svg('plus',11,'2')}</button>
-          </div>`;
-
-          const toks=orderedTokMap[chainName]||[];
-          toks.forEach(({t,wId,val},ti)=>{
-            const globalIdx=tokenIndexByKey.get(`${t.chain}::${t.addr}`)??-1;
-            const isLast=ti===toks.length-1;
-            const tokenPrice=TPRICES[t.addr]??t.php??0;
-            chainRows+=`<div class="tok-indent" data-drag-type="token" data-drag-item="${globalIdx}">
-              <div class="tokrow">
-                <div class="drag-grip" style="padding-left:4px" onmousedown="gripDown(event,'token',${acc.id},${globalIdx})" ontouchstart="gripDown(event,'token',${acc.id},${globalIdx})">${svg('grip-vertical',14,'1.75')}</div>
-                <div class="tok-line" style="height:${isLast?'50%':'100%'}"></div>
-                <div class="tok-corner"></div>
-                <div class="tdot erc"></div>
-                <div class="tinfo">
-                  <div class="tname" style="font-size:12px">${t.sym}</div>
-                  <div class="tsym">${t.name} | ${fmtEach(tokenPrice)}</div>
-                </div>
-                <div class="tright">
-                  <div class="tbal">${fmtUiNumber(t.bal,TOKEN_DECIMALS,TOKEN_DECIMALS)} ${t.sym}</div>
-                  <div class="${val>0?'tphp-erc':'tphp-dim'}">${val>0?fmt(val):'no price'}</div>
-                </div>
-                <button class="tok-remove" onclick="removeTok(${acc.id},${wId},'${t.addr}','${t.chain}')">${svg('x',10,'1.75')}</button>
-              </div>
-            </div>`;
-          });
-        });
-
-        Object.entries(orderedTokMap).forEach(([chainName,items])=>{
-          if(chainMap[chainName])return;
-          items.forEach(({t,wId,val})=>{
-            const tokenPrice=TPRICES[t.addr]??t.php??0;
-            chainRows+=`<div class="trow tok-only">
-              <div class="tdot erc"></div>
-              <div class="tinfo"><div class="tname">${t.sym}<span style="color:var(--text2);font-size:10px"> | ${chainName}</span></div><div class="tsym">${t.name} | ${fmtEach(tokenPrice)}</div></div>
-              <div class="tright">
-                <div class="tbal">${fmtUiNumber(t.bal,TOKEN_DECIMALS,TOKEN_DECIMALS)} ${t.sym}</div>
-                <div class="${val>0?'tphp-erc':'tphp-dim'}">${val>0?fmt(val):'no price'}</div>
-              </div>
-              <button class="tok-remove" onclick="removeTok(${acc.id},${wId},'${t.addr}','${t.chain}')">${svg('x',10,'1.75')}</button>
-            </div>`;
-          });
-        });
-
-        if(isScanning) chainRows+=`<div class="scan-row"><div class="spin-sm"></div><div class="scan-txt">checking remaining chains...</div></div>`;
-      } else if(!manualWallets.length){
-        chainRows=`<div class="empty-row">No balances found.</div>`;
-      }
+    if(!hasCrypto && !manualWallets.length){
+      chainRows=`<div class="empty-row">No balances found.</div>`;
     }
+    if(isScanning && hasCrypto) chainRows+=`<div class="scan-row"><div class="spin-sm"></div><div class="scan-txt">checking remaining chains...</div></div>`;
 
     const accColor=accColorMap.get(acc.id)||ACC_COLORS[aidx%ACC_COLORS.length];
     const accDark=shadeHex(accColor,-28);
@@ -2870,14 +2921,14 @@ function render(){
         <div class="ahead-right">
           <div class="atotal">${fmt(accPhp)}</div>
           <button class="icon-btn collapse-btn ${isCollapsed?'closed':'open'}" id="acollapse-${acc.id}" onclick="toggleCollapse(${acc.id})">${svg('chevron-down',13,'1.75')}</button>
+                    <button class="icon-btn" onclick="openVisibilityModal(${acc.id})" title="Edit visibility" aria-label="Edit account visibility">${svg('info',13,'1.75')}</button>
           <button class="icon-btn danger" onclick="removeAccount(${acc.id})">${svg('x',13,'1.75')}</button>
         </div>
       </div>
       <div class="acard-body ${isCollapsed?'collapsed':''}" id="abody-${acc.id}">
-        ${walletRows}
+        ${walletAndChainRows}
         ${cexRows}
         ${manualRows}
-        ${chainRows}
         <div class="add-wallet-row">
           <button class="add-wallet-inline" onclick="openAddWalletType(${acc.id})">${svg('plus',11,'2')} Add Wallet</button>
         </div>
@@ -2911,6 +2962,149 @@ function wireOverlayDismiss(overlayId, onClose){
   overlay.addEventListener('click',e=>{ if(e.target===overlay) onClose(); });
 }
 
+let pendingVisibilityAccId=null;
+function openVisibilityModal(accId){
+  pendingVisibilityAccId=accId;
+  const acc=accounts.find(a=>a.id===accId);
+  if(!acc) return;
+  
+  const list=document.getElementById('visibility-list');
+  list.innerHTML='';
+  
+  acc.wallets.forEach(w=>{
+    const isHidden=w.hidden||false;
+    const walletValue=accValue({wallets:[w]});
+    const label=walletDisplayName(w);
+    const sub=walletMetaLabel(w);
+    const valueStr=fmt(walletValue);
+    
+    const rowEl=document.createElement('div');
+    rowEl.className='visibility-item';
+    rowEl.innerHTML=`
+      <label class="visibility-checkbox">
+        <input type="checkbox" ${!isHidden?'checked':''} onchange="toggleWalletVisibility(${accId},${w.id},this.checked)">
+        <span class="checkbox-mark"></span>
+      </label>
+      <div class="visibility-info">
+        <div class="visibility-label">${label}</div>
+        <div class="visibility-sub">${sub}</div>
+      </div>
+      <div class="visibility-value">${valueStr}</div>
+    `;
+    list.appendChild(rowEl);
+  });
+  
+  document.getElementById('visibilityOverlay').classList.add('open');
+}
+
+function closeVisibilityModal(){
+  pendingVisibilityAccId=null;
+  document.getElementById('visibilityOverlay').classList.remove('open');
+  render();
+}
+
+function toggleWalletVisibility(accId,walletId,isVisible){
+  const acc=accounts.find(a=>a.id===accId);
+  const w=acc?.wallets.find(x=>x.id===walletId);
+  if(!acc || !w) return;
+  
+  w.hidden=!isVisible;
+  save();
+}
+
+let pendingNetworkVisibility=null;
+function openNetworkVisibilityModal(accId,walletId){
+  const acc=accounts.find(a=>a.id===accId);
+  const w=acc?.wallets.find(x=>x.id===walletId);
+  if(!acc || !w || w.type!=='crypto') return;
+
+  ensureCryptoWalletShape(w);
+  pendingNetworkVisibility={accId,walletId};
+
+  const title=document.getElementById('network-visibility-sub');
+  if(title) title.textContent=`Choose networks to show for ${walletDisplayName(w)}.`;
+
+  const byChain=new Map();
+  (w.nets||[]).forEach(n=>{
+    const key=String(n.chain||'').trim()||'Unknown';
+    const curr=byChain.get(key)||{native:0,tokens:0};
+    curr.native+=n.bal*(PRICES[n.sym]||0);
+    byChain.set(key,curr);
+  });
+  (w.toks||[]).forEach(t=>{
+    const key=String(t.chain||'').trim()||'Unknown';
+    const curr=byChain.get(key)||{native:0,tokens:0};
+    curr.tokens+=t.bal*(TPRICES[t.addr]??t.php??0);
+    byChain.set(key,curr);
+  });
+
+  const chains=[...byChain.keys()].sort((a,b)=>a.localeCompare(b));
+  const list=document.getElementById('network-visibility-list');
+  list.innerHTML='';
+
+  if(!chains.length){
+    list.innerHTML='<div class="empty-row">No network data yet. Refresh wallet first.</div>';
+  } else {
+    chains.forEach(chainName=>{
+      const totals=byChain.get(chainName)||{native:0,tokens:0};
+      const totalVal=(totals.native||0)+(totals.tokens||0);
+
+      const row=document.createElement('div');
+      row.className='visibility-item';
+
+      const labelWrap=document.createElement('label');
+      labelWrap.className='visibility-checkbox';
+
+      const input=document.createElement('input');
+      input.type='checkbox';
+      input.checked=isWalletNetworkVisible(w,chainName);
+      input.addEventListener('change',()=>toggleWalletNetworkVisibility(accId,walletId,chainName,input.checked));
+
+      const mark=document.createElement('span');
+      mark.className='checkbox-mark';
+      labelWrap.appendChild(input);
+      labelWrap.appendChild(mark);
+
+      const info=document.createElement('div');
+      info.className='visibility-info';
+      info.innerHTML=`<div class="visibility-label">${chainName}</div><div class="visibility-sub">Native + tokens</div>`;
+
+      const value=document.createElement('div');
+      value.className='visibility-value';
+      value.textContent=fmt(totalVal);
+
+      row.appendChild(labelWrap);
+      row.appendChild(info);
+      row.appendChild(value);
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById('networkVisibilityOverlay').classList.add('open');
+}
+
+function closeNetworkVisibilityModal(){
+  pendingNetworkVisibility=null;
+  document.getElementById('networkVisibilityOverlay').classList.remove('open');
+  render();
+}
+
+function toggleWalletNetworkVisibility(accId,walletId,networkName,isVisible){
+  const acc=accounts.find(a=>a.id===accId);
+  const w=acc?.wallets.find(x=>x.id===walletId);
+  if(!acc || !w || w.type!=='crypto') return;
+  ensureCryptoWalletShape(w);
+
+  const key=String(networkName||'').trim();
+  if(!key) return;
+
+  const set=new Set(w.hiddenNetworks||[]);
+  if(isVisible) set.delete(key);
+  else set.add(key);
+  w.hiddenNetworks=[...set];
+  save();
+}
+
 wireOverlayDismiss('addAccOverlay', closeAddAccount);
 wireOverlayDismiss('renameWalletOverlay', closeRenameWalletModal);
 wireOverlayDismiss('goalOverlay', closeGoalModal);
@@ -2922,6 +3116,8 @@ wireOverlayDismiss('tokOverlay', closeTokModal);
 wireOverlayDismiss('cexTokOverlay', closeCexTokModal);
 wireOverlayDismiss('valueEditOverlay', closeValueEditModal);
 wireOverlayDismiss('pnlDetailOverlay', closePnlDetailModal);
+wireOverlayDismiss('visibilityOverlay', closeVisibilityModal);
+wireOverlayDismiss('networkVisibilityOverlay', closeNetworkVisibilityModal);
 document.getElementById('acc-name').addEventListener('keydown',e=>{if(e.key==='Enter')confirmAddAccount();if(e.key==='Escape')closeAddAccount();});
 document.getElementById('rename-wallet-input').addEventListener('keydown',e=>{if(e.key==='Enter')confirmRenameWallet();if(e.key==='Escape')closeRenameWalletModal();});
 document.getElementById('goal-input').addEventListener('keydown',e=>{if(e.key==='Enter')confirmGoalUpdate();if(e.key==='Escape')closeGoalModal();});
