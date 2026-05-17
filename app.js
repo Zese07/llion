@@ -2,7 +2,7 @@ const CHAINS = [
   { name:"Ethereum",     rpc:"https://cloudflare-eth.com",                          sym:"ETH",   cg:"ethereum",            cgp:"ethereum" },
   { name:"BNB Chain",    rpc:"https://bsc-dataseed.binance.org/",                   sym:"BNB",   cg:"binancecoin",         cgp:"binance-smart-chain" },
   { name:"Base",         rpc:"https://mainnet.base.org",                            sym:"ETH",   cg:"ethereum",            cgp:"base" },
-  { name:"Polygon",      rpc:"https://polygon-bor-rpc.publicnode.com",              sym:"POL",   cg:"matic-network",       cgp:"polygon-pos" },
+  { name:"Polygon",      rpc:"https://polygon-bor-rpc.publicnode.com",              sym:"POL",   cg:"polygon-ecosystem-token", cgp:"polygon-pos" },
   { name:"Arbitrum One", rpc:"https://arb1.arbitrum.io/rpc",                        sym:"ETH",   cg:"ethereum",            cgp:"arbitrum-one" },
   { name:"Optimism",     rpc:"https://mainnet.optimism.io",                         sym:"ETH",   cg:"ethereum",            cgp:"optimistic-ethereum" },
   { name:"Celo",         rpc:"https://forno.celo.org",                              sym:"CELO",  cg:"celo",                cgp:"celo" },
