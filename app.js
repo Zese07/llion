@@ -106,6 +106,15 @@ let pnlDayOpenAccountHistory = (()=>{
     return {};
   }
 })();
+const DELETED_ACCOUNT_NAMES_KEY='llion_deleted_account_names';
+let deletedAccountNames = (()=>{
+  try{
+    const parsed=JSON.parse(localStorage.getItem(DELETED_ACCOUNT_NAMES_KEY) || '{}');
+    return parsed && typeof parsed==='object' ? parsed : {};
+  }catch{
+    return {};
+  }
+})();
 const PRICES = {}, TPRICES = {}, CEXPRICES = {};
 let importForAcc=null, importForWallet=null, importChain=null, pendingTok=null;
 let cexTokForAcc=null, cexTokForWallet=null;
@@ -118,6 +127,7 @@ let pendingConfirmAction=null;
 let pendingValueEdit=null;
 let pendingWalletRename=null;
 let selectedValueEditAction='adjust';
+let pnlChartSelectedIndex=-1;
 let CEX_SYMBOL_CACHE={};
 try{ CEX_SYMBOL_CACHE=JSON.parse(localStorage.getItem('llion_cg_symbol_cache')||'{}')||{}; }catch{ CEX_SYMBOL_CACHE={}; }
 const CG_JSON_CACHE=new Map();
@@ -294,6 +304,29 @@ function fmtUiInput(v,decimals=CURRENCY_DECIMALS){
 }
 function fmtQty(n){ return fmtUiNumber(n,TOKEN_DECIMALS,TOKEN_DECIMALS); }
 function moneySymbol(){ return displayCurrency==='PHP' ? '\u20B1' : '$'; }
+function compactMoneyValue(v){
+  const n=num(v);
+  if(n===null) return '0';
+  const abs=Math.abs(n);
+  if(abs>=1e9) return `${(abs/1e9).toFixed(1).replace(/\.0$/,'')}b`;
+  if(abs>=1e6) return `${(abs/1e6).toFixed(1).replace(/\.0$/,'')}m`;
+  if(abs>=1e3) return `${(abs/1e3).toFixed(2).replace(/\.0+$/,'').replace(/\.(\d)0$/,'.$1')}k`;
+  return `${Math.round(abs)}`;
+}
+function fmtCompactMoney(v){
+  const n=num(v);
+  if(n===null) return `${moneySymbol()}0`;
+  const sign=n<0?'-':'';
+  return `${sign}${moneySymbol()}${compactMoneyValue(n)}`;
+}
+function roundToThousands(v){
+  const n=num(v);
+  if(n===null) return 0;
+  return Math.round(n/1000)*1000;
+}
+function fmtWholeMoney(v){
+  return moneySymbol()+fmtUiNumber(Math.round(num(v)||0),0,0);
+}
 function phpToDisplay(v){ const n=num(v); if(n===null) return 0; return displayCurrency==='PHP' ? n*phpPerUsd : n; }
 function displayToPhp(v){ const n=num(v); if(n===null) return 0; return displayCurrency==='PHP' ? n/phpPerUsd : n; }
 function currencySymbol(currency){ return currency==='PHP' ? '\u20B1' : '$'; }
@@ -974,7 +1007,9 @@ function periodBaselineFromBuckets(days,sortedKeys){
 function accountNameById(accountId){
   const id=String(accountId);
   const acc=accounts.find(a=>String(a.id)===id);
-  return acc?.name || `Account ${id}`;
+  if(acc?.name) return acc.name;
+  if(deletedAccountNames[id]) return `${deletedAccountNames[id]} (deleted)`;
+  return `Account ${id}`;
 }
 function latestSnapshotKeyOnOrBefore(sortedKeys,targetKey){
   let candidate=null;
@@ -1081,20 +1116,24 @@ function renderPnlImpact(impacts){
 
   if(!Array.isArray(impacts) || !impacts.length){
     listEl.innerHTML='<div class="pnl-impact-empty">Tracking</div>';
+    listEl.classList.remove('is-scrollable');
     return;
   }
 
-  const maxRows=6;
-  const shown=impacts.slice(0,maxRows);
-  const hidden=impacts.length-shown.length;
-  const rows=shown.map(item=>{
+  // Alphabetical order (by account name) instead of by impact size.
+  const sorted=[...impacts].sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{sensitivity:'base'}));
+
+  const rows=sorted.map(item=>{
     const sign=item.delta>=0?'+':'-';
     const tone=item.delta>0?'pos':item.delta<0?'neg':'neu';
     return `<div class="pnl-impact-row"><span class="pnl-impact-name">${item.name}</span><span class="pnl-impact-pct ${tone}">${sign}${fmt(Math.abs(item.delta))}</span></div>`;
   });
-  if(hidden>0){
-    rows.push(`<div class="pnl-impact-row"><span class="pnl-impact-name">+${hidden} more</span><span class="pnl-impact-pct neu">--</span></div>`);
-  }
+
+  // Show every account instead of hiding extras behind "+N more" (which had no
+  // way to reveal what was hidden). Once the list grows past a handful of
+  // rows, let it scroll (same pattern as .pnl-series) so nothing is unreachable.
+  const maxVisibleRows=6;
+  listEl.classList.toggle('is-scrollable', sorted.length>maxVisibleRows);
   listEl.innerHTML=rows.join('');
 }
 function pnlForPeriodDisplay(current,days,sortedKeys){
@@ -1103,6 +1142,7 @@ function pnlForPeriodDisplay(current,days,sortedKeys){
 }
 function pnlTone(v){ return v>0?'pos':v<0?'neg':'neu'; }
 function openPnlDetailModal(days){
+  pnlChartSelectedIndex=-1;
   const conf=days===1
     ? {title:'1 Day PnL',subtitle:'View: 1 Day',mode:'daily'}
     : days===7
@@ -1164,28 +1204,57 @@ function renderPnlChart(points){
     svg.innerHTML='';
     return;
   }
-  const width=320, height=160, pad=14;
+  const width=320, height=160, leftPad=48, rightPad=14, topPad=14, bottomPad=18;
+  const tickCount=5;
   const vals=points.map(p=>phpToDisplay(p.value));
   let min=Math.min(...vals), max=Math.max(...vals);
   if(!Number.isFinite(min)||!Number.isFinite(max)){
     svg.innerHTML='';
     return;
   }
-  if(max===min){
-    max+=1;
-    min-=1;
-  }
-  const xAt=(i)=>pad+(i*(width-pad*2))/Math.max(vals.length-1,1);
-  const yAt=(v)=>height-pad-((v-min)/(max-min))*(height-pad*2);
+  const axisMin=vals[0];
+  const axisMax=max===axisMin ? axisMin+1000 : max;
+  const xAt=(i)=>leftPad+(i*(width-leftPad-rightPad))/Math.max(vals.length-1,1);
+  const yAt=(v)=>height-bottomPad-((v-axisMin)/(axisMax-axisMin))*(height-topPad-bottomPad);
   const linePoints=vals.map((v,i)=>`${xAt(i)},${yAt(v)}`).join(' ');
-  const areaPoints=`${pad},${height-pad} ${linePoints} ${xAt(vals.length-1)},${height-pad}`;
+  const areaPoints=`${leftPad},${height-bottomPad} ${linePoints} ${xAt(vals.length-1)},${height-bottomPad}`;
   const tone=vals[vals.length-1]>vals[0]?'var(--green)':vals[vals.length-1]<vals[0]?'var(--red)':'var(--text3)';
+  const ticks=Array.from({length:tickCount},(_,i)=>{
+    const ratio=i/(tickCount-1);
+    const value=axisMin+((axisMax-axisMin)*ratio);
+    const y=yAt(value);
+    return {
+      value,
+      y,
+      label:fmtCompactMoney(value),
+    };
+  });
+  const selectedIndex=pnlChartSelectedIndex>=0 && pnlChartSelectedIndex<vals.length ? pnlChartSelectedIndex : -1;
+  const selectedValue=selectedIndex>=0 ? vals[selectedIndex] : null;
+  const selectedX=selectedIndex>=0 ? xAt(selectedIndex) : null;
+  const selectedY=selectedIndex>=0 ? yAt(selectedValue) : null;
+  const selectedLabel=selectedIndex>=0 ? `${moneySymbol()}${fmtUiNumber(selectedValue,CURRENCY_DECIMALS,CURRENCY_DECIMALS)}` : '';
+  const bubbleX=selectedIndex>=0 ? Math.min(width-18-60, Math.max(4, selectedX-30)) : 0;
+  const bubbleY=selectedIndex>=0 ? Math.max(6, selectedY-30) : 0;
   svg.innerHTML=`
-    <line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" stroke="var(--border)" stroke-width="1" />
+    ${ticks.map((tick,index)=>`<g><line x1="${leftPad}" y1="${tick.y}" x2="${width-rightPad}" y2="${tick.y}" stroke="var(--border)" stroke-width="1" opacity="${index===0||index===ticks.length-1 ? '0.9' : '0.55'}" /><text x="8" y="${tick.y+3}" fill="var(--text2)" font-family="var(--mono)" font-size="9">${tick.label}</text></g>`).join('')}
+    <line x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${height-bottomPad}" stroke="var(--border)" stroke-width="1" opacity="0.7" />
+    <line x1="${leftPad}" y1="${height-bottomPad}" x2="${width-rightPad}" y2="${height-bottomPad}" stroke="var(--border)" stroke-width="1" />
     <polygon points="${areaPoints}" fill="rgba(96,165,250,0.12)" />
     <polyline points="${linePoints}" fill="none" stroke="${tone}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="${xAt(vals.length-1)}" cy="${yAt(vals[vals.length-1])}" r="3" fill="${tone}" />
+    ${vals.map((v,i)=>`<circle data-pnl-index="${i}" cx="${xAt(i)}" cy="${yAt(v)}" r="${i===selectedIndex?4.5:3}" fill="${i===selectedIndex?tone:'var(--bg)'}" stroke="${tone}" stroke-width="1.5" />`).join('')}
+    ${selectedIndex>=0 ? `<g pointer-events="none"><rect x="${bubbleX}" y="${bubbleY}" width="60" height="18" rx="6" fill="var(--surface2)" stroke="var(--border)"/><text x="${bubbleX+30}" y="${bubbleY+12}" text-anchor="middle" fill="var(--text)" font-family="var(--mono)" font-size="9">${selectedLabel}</text></g>` : ''}
   `;
+  svg.style.cursor='pointer';
+  svg.style.touchAction='manipulation';
+  svg.onclick=(ev)=>{
+    const target=ev.target?.closest?.('[data-pnl-index]');
+    if(!target) return;
+    const idx=parseInt(target.getAttribute('data-pnl-index'),10);
+    if(!Number.isInteger(idx)) return;
+    pnlChartSelectedIndex=pnlChartSelectedIndex===idx ? -1 : idx;
+    renderPnlChart(points);
+  };
 }
 function renderPnlSeries(points){
   const wrap=document.getElementById('pnl-series');
@@ -2155,9 +2224,15 @@ async function scanSolanaNative(w) {
   return true;
 }
 
+function rememberDeletedAccountName(acc){
+  if(!acc) return;
+  deletedAccountNames[String(acc.id)]=acc.name;
+  try{ localStorage.setItem(DELETED_ACCOUNT_NAMES_KEY,JSON.stringify(deletedAccountNames)); }catch{}
+}
 function removeAccount(id){
   const acc=accounts.find(a=>a.id===id);if(!acc)return;
   openConfirmModal(`Delete account "${acc.name}"?`,'This will remove the account and every wallet inside it.','Delete account',()=>{
+    rememberDeletedAccountName(acc);
     accounts=accounts.filter(a=>a.id!==id);save();render();
   });
 }
@@ -2166,6 +2241,7 @@ function removeWallet(accId,wId){
   const wallet=acc.wallets.find(w=>w.id===wId);if(!wallet)return;
   if(acc.wallets.length<=1){
     openConfirmModal(`Delete account "${acc.name}"?`,'This is the last wallet in the account, so deleting it will remove the whole account.','Delete account',()=>{
+      rememberDeletedAccountName(acc);
       accounts=accounts.filter(a=>a.id!==accId);save();render();
     });
     return;
@@ -3147,4 +3223,3 @@ window.addEventListener('online',()=>{ setOfflineMode(false); render(); });
 window.addEventListener('offline',()=>{ setOfflineMode(true); render(); });
 
 boot();
-

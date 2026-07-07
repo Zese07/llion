@@ -34,10 +34,12 @@
           <button class="currency-dd-item" id="currency-opt-php" type="button" data-currency="PHP">PHP</button>
         </div>
       </div>
-      <button class="refresh-btn" id="refresh-btn" onclick="refreshAll()" aria-label="Refresh data" title="Refresh">
+        <button class="refresh-btn" id="refresh-btn" onclick="refreshAll()" aria-label="Refresh data" title="Refresh">
+          <span class="btn-txt">Refresh</span>
           <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></span>
       </button>
-      <button class="settings-btn" id="settings-btn" onclick="openSettingsModal()" aria-label="Open settings" title="Settings">
+        <button class="settings-btn" id="settings-btn" onclick="openSettingsModal()" aria-label="Open settings" title="Settings">
+          <span class="btn-txt">Settings</span>
           <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0 -6a3 3 0 0 0 0 6"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06 .06a2 2 0 0 1 0 2.83a2 2 0 0 1 -2.83 0l-.06 -.06a1.65 1.65 0 0 0 -1.82 -.33a1.65 1.65 0 0 0 -1 1.51v.09a2 2 0 0 1 -2 2a2 2 0 0 1 -2 -2v-.09a1.65 1.65 0 0 0 -1 -1.51a1.65 1.65 0 0 0 -1.82 .33l-.06 .06a2 2 0 0 1 -2.83 0a2 2 0 0 1 0 -2.83l.06 -.06a1.65 1.65 0 0 0 .33 -1.82a1.65 1.65 0 0 0 -1.51 -1h-.09a2 2 0 0 1 -2 -2a2 2 0 0 1 2 -2h.09a1.65 1.65 0 0 0 1.51 -1a1.65 1.65 0 0 0 -.33 -1.82l-.06 -.06a2 2 0 0 1 0 -2.83a2 2 0 0 1 2.83 0l.06 .06a1.65 1.65 0 0 0 1.82 .33h.09a1.65 1.65 0 0 0 1 -1.51v-.09a2 2 0 0 1 2 -2a2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51a1.65 1.65 0 0 0 1.82 -.33l.06 -.06a2 2 0 0 1 2.83 0a2 2 0 0 1 0 2.83l-.06 .06a1.65 1.65 0 0 0 -.33 1.82v.09a1.65 1.65 0 0 0 1.51 1h.09a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-.09a1.65 1.65 0 0 0 -1.51 1z"/></svg></span>
       </button>
     </div>
@@ -95,39 +97,48 @@
 
 <div class="overlay" id="addAccOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeAddAccount()" aria-label="Close add account">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3>New Account</h3>
     <div class="sub">Just give it a name. You'll add wallets after.</div>
     <label class="field-lbl">Account Name</label>
     <input class="finput" id="acc-name" placeholder="e.g. Main, Savings, Trading..." autocomplete="off">
     <button class="btn-ok" onclick="confirmAddAccount()">Create</button>
-    <button class="btn-cancel" onclick="closeAddAccount()">Cancel</button>
   </div>
 </div>
 
 <div class="overlay" id="renameWalletOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeRenameWalletModal()" aria-label="Close rename wallet">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3>Rename Wallet</h3>
     <div class="sub" id="rename-wallet-sub">Update the wallet name.</div>
     <label class="field-lbl">Wallet Name</label>
     <input class="finput" id="rename-wallet-input" placeholder="e.g. Main Wallet" autocomplete="off">
     <button class="btn-ok" id="rename-wallet-ok" onclick="confirmRenameWallet()">Save</button>
-    <button class="btn-cancel" onclick="closeRenameWalletModal()">Cancel</button>
   </div>
 </div>
 
 <div class="overlay" id="goalOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeGoalModal()" aria-label="Close goal modal">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3>Edit Goal</h3>
     <div class="sub">Set the portfolio target used for the progress bar.</div>
     <label class="field-lbl" id="goal-input-lbl">Goal Amount ($)</label>
     <input class="finput" id="goal-input" placeholder="1000000" type="number" min="0.01" step="0.01">
     <button class="btn-ok" onclick="confirmGoalUpdate()">Save</button>
-    <button class="btn-cancel" onclick="closeGoalModal()">Cancel</button>
   </div>
 </div>
 
 <div class="overlay" id="settingsOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeSettingsModal()" aria-label="Close settings">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3>Settings</h3>
     <div class="sub">Manage data backup and app information.</div>
 
@@ -142,10 +153,8 @@
     <div class="settings-section">
       <div class="field-lbl">Credits</div>
       <div class="settings-credit"><strong>Llion - track your llion.</strong></div>
-      <div class="settings-note"> Version: v1.0.3 <br>by Zese07</div>
+      <div class="settings-note"> Version: v1.0.4 <br>by Zese07</div>
     </div>
-
-    <button class="btn-cancel" onclick="closeSettingsModal()">Close</button>
   </div>
 </div>
 
@@ -159,15 +168,20 @@
 
 <div class="overlay" id="confirmOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeConfirmModal()" aria-label="Close confirmation dialog">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3 id="confirm-title">Confirm Action</h3>
     <div class="sub" id="confirm-sub">This action cannot be undone.</div>
     <button class="btn-danger" id="confirm-ok" onclick="confirmDangerAction()">Delete</button>
-    <button class="btn-cancel" onclick="closeConfirmModal()">Cancel</button>
   </div>
 </div>
 
 <div class="overlay" id="addWalletTypeOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeAddWalletType()" aria-label="Close add wallet">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3>Add Wallet</h3>
     <div class="sub" id="wtype-sub">What kind of wallet?</div>
     <div class="type-grid">
@@ -235,12 +249,14 @@
     </div>
 
     <button class="btn-ok" id="wtype-ok" onclick="confirmAddWallet()" disabled>Add</button>
-    <button class="btn-cancel" onclick="closeAddWalletType()">Cancel</button>
   </div>
 </div>
 
 <div class="overlay" id="tokOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeTokModal()" aria-label="Close import token">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3>Import Token</h3>
     <div class="sub" id="tok-sub">Paste the contract address.</div>
     <label class="field-lbl">Token Contract Address</label>
@@ -252,12 +268,14 @@
       <div class="tp-detail" id="tp-detail"></div>
     </div>
     <button class="btn-ok" id="tok-ok" onclick="confirmImport()" disabled>Import</button>
-    <button class="btn-cancel" onclick="closeTokModal()">Cancel</button>
   </div>
 </div>
 
 <div class="overlay" id="cexTokOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeCexTokModal()" aria-label="Close import token">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3>Import Token</h3>
     <div class="sub" id="cex-tok-sub">Add token symbol and total quantity. Price will be fetched live.</div>
     <label class="field-lbl">Token Symbol</label>
@@ -275,12 +293,14 @@
     <label class="field-lbl">Total Tokens</label>
     <input class="finput" id="cex-tok-amount" placeholder="0.00" type="number" min="0" step="0.000001">
     <button class="btn-ok" id="cex-tok-ok" onclick="confirmCexTokenImport()" disabled>Import</button>
-    <button class="btn-cancel" onclick="closeCexTokModal()">Cancel</button>
   </div>
 </div>
 
 <div class="overlay" id="valueEditOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closeValueEditModal()" aria-label="Close value edit">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3 id="value-edit-title">Edit Value</h3>
     <div class="sub" id="value-edit-sub">Apply a value change.</div>
     <div class="value-current" id="value-edit-current">Current: $0.00</div>
@@ -292,12 +312,14 @@
     <label class="field-lbl" id="value-amount-lbl">Amount ($)</label>
     <input class="finput" id="value-amount" placeholder="0.00" type="number" min="0" step="0.01">
     <button class="btn-ok" id="value-edit-ok" onclick="applyValueEdit()" disabled>Apply</button>
-    <button class="btn-cancel" onclick="closeValueEditModal()">Cancel</button>
   </div>
 </div>
 
 <div class="overlay" id="pnlDetailOverlay">
   <div class="modal">
+    <button class="modal-close-btn" type="button" onclick="closePnlDetailModal()" aria-label="Close PnL detail">
+      <span class="ic"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></span>
+    </button>
     <h3 id="pnl-detail-title">PnL Detail</h3>
     <div class="sub" id="pnl-detail-sub">Daily breakdown</div>
     <div class="pnl-detail-kpis">
@@ -312,7 +334,6 @@
       <div class="pnl-impact-list" id="pnl-impact-list"></div>
     </div>
     <div class="pnl-series" id="pnl-series"></div>
-    <button class="btn-cancel" onclick="closePnlDetailModal()">Close</button>
   </div>
 </div>
 
