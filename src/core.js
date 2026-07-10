@@ -481,4 +481,3 @@ function initCurrencyDropdown(){
 
 restorePriceSnapshots();
 ensureGoalShape();
-

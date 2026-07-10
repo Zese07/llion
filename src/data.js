@@ -146,12 +146,15 @@ function ensureManualWalletShape(wallet){
   if(currency!=='USD' && currency!=='PHP') currency=displayCurrency==='PHP' ? 'PHP' : 'USD';
   let amountValue=num(wallet.amountValue);
   const legacyBase=num(wallet.amount);
+  const hasStoredBase=legacyBase!==null && legacyBase>=0;
   if(amountValue===null || amountValue<0){
-    amountValue=legacyBase!==null && legacyBase>=0 ? baseToCurrency(legacyBase,currency) : 0;
+    amountValue=hasStoredBase ? baseToCurrency(legacyBase,currency) : 0;
   }
   wallet.amountCurrency=currency;
   wallet.amountValue=amountValue;
-  wallet.amount=currencyToBase(amountValue,currency);
+  if(!hasStoredBase){
+    wallet.amount=currencyToBase(amountValue,currency);
+  }
   return wallet;
 }
 
@@ -181,7 +184,7 @@ function visibleDexWalletTotal(wallet){
 
 function manualAmountToBase(wallet){
   ensureManualWalletShape(wallet);
-  return currencyToBase(wallet.amountValue,wallet.amountCurrency);
+  return num(wallet.amount)||0;
 }
 
 function normalizeAccountWallets(accountList){
@@ -642,7 +645,6 @@ function renderPnlImpact(impacts){
     return;
   }
 
-  // Alphabetical order (by account name) instead of by impact size.
   const sorted=[...impacts].sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{sensitivity:'base'}));
 
   const rows=sorted.map(item=>{
@@ -651,9 +653,6 @@ function renderPnlImpact(impacts){
     return `<div class="pnl-impact-row"><span class="pnl-impact-name">${item.name}</span><span class="pnl-impact-pct ${tone}">${sign}${fmt(Math.abs(item.delta))}</span></div>`;
   });
 
-  // Show every account instead of hiding extras behind "+N more" (which had no
-  // way to reveal what was hidden). Once the list grows past a handful of
-  // rows, let it scroll (same pattern as .pnl-series) so nothing is unreachable.
   const maxVisibleRows=4;
   listEl.classList.toggle('is-scrollable', sorted.length>maxVisibleRows);
   listEl.innerHTML=rows.join('');

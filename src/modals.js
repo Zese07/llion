@@ -304,10 +304,14 @@ function openValueEditModal({title,sub,current,kind,accId,walletId,tokId=null}){
     const w=acc?.wallets.find(x=>x.id===walletId);
     if(w&&w.type==='manual'){
       ensureManualWalletShape(w);
-      const baseCurrent=manualAmountToBase(w);
       manualCurrency=displayCurrency;
       pendingValueEdit.currency=manualCurrency;
-      pendingValueEdit.currentDisplay=baseToCurrency(baseCurrent,manualCurrency);
+      // If the wallet is already denominated in the currency we're displaying,
+      // show the exact value the user last typed - no FX round-trip needed, so
+      // no risk of it looking "off" from a rate tick between edits.
+      pendingValueEdit.currentDisplay=(manualCurrency===w.amountCurrency)
+        ? w.amountValue
+        : baseToCurrency(manualAmountToBase(w),manualCurrency);
     }
   }
   const activeCurrency=kind==='manual' ? manualCurrency : displayCurrency;
