@@ -491,7 +491,7 @@ function confirmAddAccount(){
 // CEX LOOKUP — CoinGecko symbol lookup used by the 'add CEX wallet' flow
 // ============================================================
 function tokenOptLabel(t){
-  return `${t.name} (${t.sym}) | ${t.id}${t.php>0?` | ${fmt(t.php)}`:' | no price'}`;
+  return `${t.name} (${t.sym}) | ${t.id}${t.php>0?` | ${fmt(t.php)}`:' | ⚠ no price data'}`;
 }
 function fillMatchSelect(selectId, items){
   const sel=document.getElementById(selectId);
@@ -551,12 +551,6 @@ async function lookupCexAddToken(symbol){
     return;
   }
   pendingCexWalletMatches=matches;
-  if(matches.length===1){
-    document.getElementById('cex-add-match-wrap').style.display='none';
-    pendingCexWalletToken=matches[0];
-    updateCexAddPreview();
-    return;
-  }
   pendingCexWalletToken=null;
   fillMatchSelect('cex-add-match',matches);
   document.getElementById('cex-add-match-wrap').style.display='block';
@@ -1052,12 +1046,6 @@ async function lookupCexImportToken(symbol){
     return;
   }
   pendingCexTokenMatches=matches;
-  if(matches.length===1){
-    document.getElementById('cex-tok-match-wrap').style.display='none';
-    pendingCexToken=matches[0];
-    updateCexImportPreview();
-    return;
-  }
   pendingCexToken=null;
   fillMatchSelect('cex-tok-match',matches);
   document.getElementById('cex-tok-match-wrap').style.display='block';

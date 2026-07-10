@@ -115,7 +115,7 @@ async function findCoinsBySymbol(symbol){
     const php=pmap[c.id]||fallbackPriceForSymbol(sym)||0;
     if(Number.isFinite(php)) CEXPRICES[c.id]=php;
     return {id:c.id,name:c.name||sym,sym,php};
-  });
+  }).sort((a,b)=>(b.php>0?1:0)-(a.php>0?1:0));
   setCgSymbolCache(mkey,out);
   return out;
 }
