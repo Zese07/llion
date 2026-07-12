@@ -28,6 +28,7 @@ const CHAINS = [
   { name:"Unichain",     rpc:"https://mainnet.unichain.org",                        sym:"ETH",   cg:"ethereum",            cgp:"unichain" },
   { name:"XDC",          rpc:"https://erpc.xinfin.network",                         sym:"XDC",   cg:"xdce-crowd-sale",     cgp:"xdc-network" },
   { name:"Sei",          rpc:"https://evm-rpc.sei-apis.com",                        sym:"SEI",   cg:"sei-network",         cgp:"sei-network" },
+  { name:"Robinhood Chain", rpc:"https://rpc.mainnet.chain.robinhood.com",          sym:"ETH",   cg:"ethereum",            cgp:"robinhood-chain" },
 ];
 
 const ICONS={

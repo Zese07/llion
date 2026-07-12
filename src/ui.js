@@ -397,12 +397,18 @@ function render(){
           if(w.hidden) return;
         ensureManualWalletShape(w);
         const mCat=getManualCat(w.cat);
-        const baseAmount=manualAmountToBase(w);
+        // Avoid an FX round-trip (PHP -> USD base -> PHP) when the wallet is
+        // already denominated in the currency being displayed - the stored
+        // base can drift from what the user actually typed as the FX rate
+        // ticks between saves, even though no conversion was ever needed.
+        const manualDisplay=(displayCurrency===w.amountCurrency)
+          ? w.amountValue
+          : phpToDisplay(manualAmountToBase(w));
         manualRows+=`<div class="manual-amount-row" data-drag-type="manual" data-drag-item="${mi}">
           <div class="drag-grip" onmousedown="gripDown(event,'manual',${acc.id},${mi})" ontouchstart="gripDown(event,'manual',${acc.id},${mi})">${svg('grip-vertical',14,'1.75')}</div>
           <div class="manual-ic">${svg(w.lucide||mCat.lucide||'folder',14)}</div>
           <div class="manual-info"><div class="manual-label">${w.name}</div><div class="manual-cat">${mCat.label}</div></div>
-          <div class="manual-php">${fmt(baseAmount)}</div>
+          <div class="manual-php">${moneySymbol()}${fmtUiNumber(manualDisplay,CURRENCY_DECIMALS,CURRENCY_DECIMALS)}</div>
           <button class="icon-btn" onclick="openManualValueModal(${acc.id},${w.id})">${svg('pencil',11,'1.75')}</button>
           <button class="wrow-del" onclick="removeWallet(${acc.id},${w.id})">${svg('x',11,'1.75')}</button>
         </div>`;
