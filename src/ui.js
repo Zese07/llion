@@ -143,23 +143,36 @@ function gripUp(){
   if(from === to){ return; }
 
   if(type === 'account'){
-    const item = accounts.splice(from,1)[0]; accounts.splice(to,0,item); save();
+    const item = accounts.splice(from,1)[0]; 
+    accounts.splice(to,0,item); 
+    save();
   } else if(type === 'chain'){
-    const acc = accounts.find(a=>a.id===accId); if(!acc) return;
-    const order = acc._renderChainOrder ? [...acc._renderChainOrder] : [];
-    const item = order.splice(from,1)[0]; order.splice(to,0,item);
-    acc.chainOrder = order; save();
+    const acc = accounts.find(a=>a.id===accId); 
+    if(!acc) return;
+    // Get all chain names from the current render order
+    const chains = acc._renderChainOrder || [];
+    const item = chains.splice(from,1)[0]; 
+    chains.splice(to,0,item);
+    acc.chainOrder = chains;
+    save();
   } else if(type === 'token'){
-    const acc = accounts.find(a=>a.id===accId); if(!acc) return;
-    const order = acc._renderTokOrder ? acc._renderTokOrder.map(x=>x.t.addr) : [];
-    const item = order.splice(from,1)[0]; order.splice(to,0,item);
-    acc.tokOrder = order; save();
+    const acc = accounts.find(a=>a.id===accId); 
+    if(!acc) return;
+    // Get all token addresses from the current render order
+    const tokens = acc._renderTokOrder || [];
+    const item = tokens.splice(from,1)[0]; 
+    tokens.splice(to,0,item);
+    acc.tokOrder = tokens;
+    save();
   } else if(type === 'manual'){
-    const acc = accounts.find(a=>a.id===accId); if(!acc) return;
+    const acc = accounts.find(a=>a.id===accId); 
+    if(!acc) return;
     const manuals = acc.wallets.filter(w=>w.type==='manual');
-    const item = manuals.splice(from,1)[0]; manuals.splice(to,0,item);
+    const item = manuals.splice(from,1)[0]; 
+    manuals.splice(to,0,item);
     const cryptos = acc.wallets.filter(w=>w.type==='crypto');
-    acc.wallets = [...cryptos, ...manuals];
+    const cexs = acc.wallets.filter(w=>w.type==='cex');
+    acc.wallets = [...cryptos, ...cexs, ...manuals];
     save();
   }
   render();

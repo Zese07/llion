@@ -867,7 +867,9 @@ function needsBootRescan(wallet){
 async function refreshCryptoWallet(wallet, progressCb){
   let updated=false;
   if(wallet.chain==='sol'){
-    updated=await scanSolanaNative(wallet);
+    const nativeOk = await scanSolanaNative(wallet);
+    const tokenOk = await scanSolanaTokens(wallet);
+    updated=!!(nativeOk||tokenOk);
     if(progressCb) progressCb('Solana');
   } else {
     const [nativeOk,tokenOk]=await Promise.all([
@@ -965,8 +967,8 @@ async function refreshAll(){
 
 async function fetchPrices(){
   await fetchPhpPerUsd(false);
-  const defaults={ETH:3200,BNB:560,POL:0.7,AVAX:34,CELO:0.7,MNT:0.8,GT:8,APE:1.1,BERA:6,BTT:0.0000014,GLMR:0.2,MOVR:7,S:0.5,XDC:0.1,SEI:0.6};
-  const ids=[...new Set(CHAINS.map(c=>c.cg))];
+  const defaults={ETH:3200,BNB:560,POL:0.7,AVAX:34,CELO:0.7,MNT:0.8,GT:8,APE:1.1,BERA:6,BTT:0.0000014,GLMR:0.2,MOVR:7,S:0.5,XDC:0.1,SEI:0.6,SOL:150};
+  const ids=[...new Set([...CHAINS.map(c=>c.cg),'solana'])];
   const d=await fetchCgSimplePrices(ids);
   let hasFreshPrice=false;
   CHAINS.forEach(c=>{
@@ -977,8 +979,42 @@ async function fetchPrices(){
     }
     else if(!Number.isFinite(PRICES[c.sym])||PRICES[c.sym]<=0) PRICES[c.sym]=defaults[c.sym]||0;
   });
+  // Solana isn't in CHAINS (it's non-EVM, scanned separately), so refresh its
+  // price here too - otherwise PRICES['SOL'] only ever gets set once and the
+  // displayed value of SOL holdings goes stale even as the balance updates.
+  const solPhp=d['solana'];
+  if(Number.isFinite(solPhp) && solPhp>0){
+    PRICES['SOL']=solPhp;
+    hasFreshPrice=true;
+  } else if(!Number.isFinite(PRICES['SOL'])||PRICES['SOL']<=0){
+    PRICES['SOL']=defaults.SOL;
+  }
   persistPriceSnapshots();
   return hasFreshPrice;
+}
+// Fallback price source for Solana SPL tokens that CoinGecko doesn't track
+// (e.g. tokenized-stock products like xStocks). Jupiter's price API is
+// Solana-native and covers many mints CoinGecko has no listing for at all.
+async function fetchJupiterPrices(mints){
+  if(!mints.length) return {};
+  const endpoints=[
+    `https://lite-api.jup.ag/price/v2?ids=${mints.join(',')}`,
+    `https://price.jup.ag/v4/price?ids=${mints.join(',')}`
+  ];
+  for(const url of endpoints){
+    try{
+      const res=await fetch(url,{signal:AbortSignal.timeout(8000)});
+      if(!res.ok) continue;
+      const json=await res.json();
+      const out={};
+      Object.entries(json?.data||{}).forEach(([mint,info])=>{
+        const p=num(info?.price);
+        if(p!==null) out[mint]=p;
+      });
+      if(Object.keys(out).length) return out;
+    }catch{ /* try next endpoint */ }
+  }
+  return {};
 }
 async function fetchTokPrices(){
   const ids=[...new Set(accounts.flatMap(a=>a.wallets.flatMap(w=>{
@@ -986,8 +1022,7 @@ async function fetchTokPrices(){
     if(w.type==='cex') return (w.toks||[]).map(t=>t.cgid).filter(id=>id && !String(id).startsWith('sym:'));
     return [];
   })))];
-  if(!ids.length) return false;
-  const merged=await fetchCgSimplePrices(ids);
+  const merged=ids.length?await fetchCgSimplePrices(ids):{};
   let hasFreshPrice=false;
   accounts.forEach(a=>a.wallets.forEach(w=>{
     if(w.type==='crypto'){
@@ -1003,6 +1038,23 @@ async function fetchTokPrices(){
       });
     }
   }));
+  // Any Solana SPL token still priceless (no cgid, or CoinGecko had no data for it) gets one more try via Jupiter.
+  const unpriced=[...new Set(accounts.flatMap(a=>a.wallets.flatMap(w=>{
+    if(w.type!=='crypto'||w.chain!=='sol') return [];
+    return (w.toks||[]).filter(t=>!Number.isFinite(TPRICES[t.addr])||TPRICES[t.addr]<=0).map(t=>t.addr);
+  })))];
+  if(unpriced.length){
+    const jup=await fetchJupiterPrices(unpriced);
+    if(Object.keys(jup).length){
+      accounts.forEach(a=>a.wallets.forEach(w=>{
+        if(w.type==='crypto'&&w.chain==='sol'){
+          (w.toks||[]).forEach(t=>{
+            if(Number.isFinite(jup[t.addr])){ TPRICES[t.addr]=jup[t.addr]; hasFreshPrice=true; }
+          });
+        }
+      }));
+    }
+  }
   persistPriceSnapshots();
   return hasFreshPrice;
 }
@@ -1033,14 +1085,21 @@ async function getERC20(chainName,contract,wallet){
 async function getTokBal(rpc,wallet,contract,dec){try{return Number(BigInt(await ecall(rpc,contract,'0x70a08231'+encAddr(wallet))))/10**dec;}catch{return null;}}
 
 async function scanNative(w,cb){
+  const prevMap=Object.fromEntries((w.nets||[]).map(n=>[n.chain,n]));
   const nextNets=[];
   let success=0;
   await Promise.all(CHAINS.map(async c=>{
+    let bal=null;
     try{ const res=await fetch(c.rpc,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_getBalance',params:[w.addr,'latest']}),signal:AbortSignal.timeout(8000)});
-      const bal=Number(BigInt((await res.json()).result))/1e18;
+      bal=Number(BigInt((await res.json()).result))/1e18;
       success++;
-      if(bal>0.000001)nextNets.push({chain:c.name,sym:c.sym,bal}); }catch{}
+    }catch{}
     if(cb)cb(c.name);
+    if(bal!==null && bal>0.000001){
+      nextNets.push({chain:c.name,sym:c.sym,bal});
+    } else if(prevMap[c.name]){
+      nextNets.push(prevMap[c.name]);
+    }
   }));
   if(success>0) w.nets=nextNets;
   return success>0;
@@ -1056,8 +1115,12 @@ async function fetchTokBals(w){
       if(num(t.bal)===null) t.bal=0;
       return;
     }
-    t.bal=bal;
     success++;
+    // Same rule as everywhere else: only overwrite when we got a real positive
+    // balance back. A fetched zero keeps the last known value instead of
+    // wiping it out - it only updates once the RPC actually reports something.
+    if(bal>0) t.bal=bal;
+    else if(num(t.bal)===null) t.bal=0;
   }));
   return success>0;
 }

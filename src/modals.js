@@ -711,25 +711,38 @@ function confirmAddWallet(){
   }
 }
 
-const SOLANA_RPC = 'https://solana-rpc.publicnode.com';
+const SOLANA_RPCS = [
+  'https://api.mainnet-beta.solana.com',
+  'https://solana.drpc.org',
+  'https://solana-rpc.publicnode.com'
+];
+// Tries each public Solana RPC in turn until one returns a usable result -
+// a single free endpoint rate-limits/fails often enough that silently
+// falling back to stale data (the old behavior) looks like "it just doesn't update".
+async function solRpc(method, params){
+  for(const rpc of SOLANA_RPCS){
+    try{
+      const res = await fetch(rpc, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({jsonrpc:'2.0', id:1, method, params}),
+        signal: AbortSignal.timeout(8000)
+      });
+      if(!res.ok) continue;
+      const data = await res.json();
+      if(data && data.result !== undefined) return data.result;
+    }catch{ /* try next endpoint */ }
+  }
+  return undefined;
+}
 async function scanSolanaNative(w) {
   const prevNets=Array.isArray(w.nets)?[...w.nets]:[];
+  const prevSol=prevNets.find(n=>n.chain==='Solana');
   let sol = null;
   let fetchError = false;
   try {
-    const res = await fetch(SOLANA_RPC, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'getBalance',
-        params: [w.addr]
-      }),
-      signal: AbortSignal.timeout(8000)
-    });
-    const data = await res.json();
-    const lamports = Number(data?.result?.value);
+    const result = await solRpc('getBalance', [w.addr]);
+    const lamports = Number(result?.value);
     if (Number.isFinite(lamports)) {
       sol = lamports / 1e9;
     } else {
@@ -740,12 +753,48 @@ async function scanSolanaNative(w) {
     const cg = await fetchCgSimplePrices(['solana']);
     if (cg && Number.isFinite(cg['solana'])) PRICES['SOL'] = cg['solana'];
   }
-  if(sol===null){
-    if(prevNets.length) w.nets=prevNets;
-    return false;
+  // Only overwrite the saved balance when we actually got a positive number back.
+  // A failed fetch or a fetched zero both fall back to the last known value -
+  // that way a flaky RPC response never wipes out a real balance you already had.
+  if(sol===null || sol<=0){
+    w.nets = prevSol ? [prevSol] : [];
+    return sol!==null && !fetchError; // true if we legitimately confirmed a 0 balance
   }
   w.nets=[{chain: 'Solana', sym: 'SOL', bal: sol, warning: fetchError ? 'Could not fetch balance' : undefined}];
   return true;
+}
+
+// Refreshes balances for every SPL token already tracked on a Solana wallet.
+// Requests are deliberately sequential (not Promise.all) - firing every
+// token's request at once against a single free public RPC gets some of
+// them rate-limited at random, which looked like "sometimes BAT has a value,
+// sometimes SPYx does" even though nothing about the code itself changed.
+async function scanSolanaTokens(w){
+  if(!Array.isArray(w.toks) || !w.toks.length) return false;
+  let anyOk=false;
+  for(const t of w.toks){
+    let ok=false;
+    for(let attempt=0; attempt<2 && !ok; attempt++){
+      try{
+        const result = await solRpc('getTokenAccountsByOwner', [w.addr, {mint: t.addr}, {encoding: 'jsonParsed'}]);
+        const first = result?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount;
+        const bal = first ? Number(first.uiAmount ?? first.uiAmountString ?? 0) : 0;
+        if(Number.isFinite(bal)){
+          // Only overwrite if we actually got a positive balance back - a fetched
+          // zero (or a missing token account) is treated the same as a failed
+          // fetch here and falls back to whatever was last saved, rather than
+          // wiping out a real balance because of one flaky/empty response.
+          if(bal>0) t.bal=bal;
+          else if(num(t.bal)===null) t.bal=0; // never had a value at all - init to 0
+          ok=true;
+        }
+      }catch{ /* retry once, then move on and keep last known bal */ }
+      if(!ok) await new Promise(r=>setTimeout(r,300));
+    }
+    if(ok) anyOk=true;
+    await new Promise(r=>setTimeout(r,150)); // small gap before the next token's request
+  }
+  return anyOk;
 }
 
 
@@ -891,14 +940,8 @@ async function lookupTok(contract){
         } catch {}
 
         try {
-          const res = await fetch(SOLANA_RPC, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({jsonrpc: '2.0', id: 1, method: 'getAccountInfo', params: [mint, {encoding: 'jsonParsed'}]}),
-            signal: AbortSignal.timeout(8000)
-          });
-          const data = await res.json();
-          const mintInfo = data?.result?.value?.data?.parsed?.info;
+          const result = await solRpc('getAccountInfo', [mint, {encoding: 'jsonParsed'}]);
+          const mintInfo = result?.value?.data?.parsed?.info;
           if (Number.isFinite(Number(mintInfo?.decimals))) decimals = Number(mintInfo.decimals);
         } catch {}
 
@@ -908,14 +951,8 @@ async function lookupTok(contract){
 
       let bal = 0;
       try {
-        const res = await fetch(SOLANA_RPC, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({jsonrpc: '2.0', id: 1, method: 'getTokenAccountsByOwner', params: [w.addr, {mint}, {encoding: 'jsonParsed'}]}),
-          signal: AbortSignal.timeout(8000)
-        });
-        const data = await res.json();
-        const first = data?.result?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount;
+        const result = await solRpc('getTokenAccountsByOwner', [w.addr, {mint}, {encoding: 'jsonParsed'}]);
+        const first = result?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount;
         if (first) bal = Number(first.uiAmount ?? first.uiAmountString ?? 0);
       } catch {}
 
@@ -931,6 +968,12 @@ async function lookupTok(contract){
           php = cg[0].php || 0;
           cgid = cg[0].id || null;
         }
+      }
+      if(!php){
+        // CoinGecko has no listing for this mint (common for newer Solana-native
+        // tokens like tokenized-stock products) - try Jupiter's price API instead.
+        const jup = await fetchJupiterPrices([mint]);
+        if(Number.isFinite(jup[mint])) php = jup[mint];
       }
 
       pendingTok = {sym: symbol, name, dec: decimals, bal, php, cgid, addr: mint, chain: 'Solana'};
