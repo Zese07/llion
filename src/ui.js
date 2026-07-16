@@ -53,7 +53,7 @@ const DRAG_SWAP_BUFFER_PX=8;
 // ============================================================
 // DRAG REORDER — Drag-and-drop reordering of accounts/wallets
 // ============================================================
-function gripDown(e, type, accId, idx){
+function gripDown(e, type, accId, idx, walletId){
   e.preventDefault();
   e.stopPropagation();
   const grip = e.currentTarget;
@@ -65,11 +65,16 @@ function gripDown(e, type, accId, idx){
   const ghost = row.cloneNode(true);
   ghost.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;z-index:999;pointer-events:none;background:var(--surface);border:1px solid var(--border);`;
   ghost.classList.add('dragging-ghost');
+  // Neutralize the account's accent color on the dragged copy so the total/badge/icons
+  // always show in gray while dragging, regardless of that account's assigned color.
+  ghost.style.setProperty('--acc-main','var(--text2)');
+  ghost.style.setProperty('--acc-dark','var(--border)');
+  ghost.querySelectorAll('.apct-badge').forEach(b=>{ b.style.color='var(--text2)'; b.style.borderColor='var(--border)'; });
   document.body.appendChild(ghost);
 
   row.style.opacity = '0.25';
 
-  DR = { type, accId, idx, row, ghost, offsetY: clientY - rect.top, placeholder: null, targetIdx: idx, startY: clientY, started: false };
+  DR = { type, accId, idx, walletId, row, ghost, offsetY: clientY - rect.top, placeholder: null, targetIdx: idx, startY: clientY, started: false };
 
   const ph = document.createElement('div');
   ph.style.cssText = `height:${rect.height}px;background:rgba(255,255,255,0.03);border:1px dashed var(--border);`;
@@ -137,12 +142,20 @@ function gripUp(){
   if(!DR.started){ DR=null; return; }
 
   const from = DR.idx, to = DR.targetIdx;
-  const type = DR.type, accId = DR.accId;
+  const type = DR.type, accId = DR.accId, walletId = DR.walletId;
   DR = null;
 
   if(from === to){ return; }
 
-  if(type === 'account'){
+  if(type.startsWith('cextoken_')){
+    const acc = accounts.find(a=>a.id===accId);
+    if(!acc) return;
+    const w = acc.wallets.find(x=>x.id===walletId);
+    if(!w || !Array.isArray(w.toks)) return;
+    const item = w.toks.splice(from,1)[0];
+    w.toks.splice(to,0,item);
+    save();
+  } else if(type === 'account'){
     const item = accounts.splice(from,1)[0]; 
     accounts.splice(to,0,item); 
     save();
@@ -159,7 +172,7 @@ function gripUp(){
     const acc = accounts.find(a=>a.id===accId); 
     if(!acc) return;
     // Get all token addresses from the current render order
-    const tokens = acc._renderTokOrder || [];
+    const tokens = (acc._renderTokOrder || []).map(item=>item.t.addr);
     const item = tokens.splice(from,1)[0]; 
     tokens.splice(to,0,item);
     acc.tokOrder = tokens;
@@ -224,6 +237,46 @@ function render(){
       });
     });
 
+    let chainEntries=Object.entries(chainMap);
+    if(acc.chainOrder?.length){
+      chainEntries.sort((a,b)=>{
+        const ai=acc.chainOrder.indexOf(a[0]),bi=acc.chainOrder.indexOf(b[0]);
+        if(ai===-1&&bi===-1)return b[1].totalPhp-a[1].totalPhp;
+        if(ai===-1)return 1;if(bi===-1)return -1;return ai-bi;
+      });
+    } else { chainEntries.sort((a,b)=>b[1].totalPhp-a[1].totalPhp); }
+    acc._renderChainOrder=chainEntries.map(([n])=>n);
+    // Stable index per chain name, shared across every DEX wallet in this account
+    // (fixes the network drag not working when an account has 2+ DEX wallets,
+    // since the old per-wallet loop counter reset to 0 for each wallet).
+    const chainIndexByName=new Map(chainEntries.map(([name],idx)=>[name,idx]));
+
+    acc.wallets.filter(w=>w.type==='crypto'&&w.chain==='sol'&&Array.isArray(w.toks)).forEach(w=>{
+      w.toks.forEach(t=>{
+        if(!tokMap['Solana'])tokMap['Solana']=[];
+        if(!tokMap['Solana'].some(x=>x.t.addr===t.addr)){
+          tokMap['Solana'].push({t,wId:w.id,val:t.bal*(TPRICES[t.addr]??t.php??0),wAddr:w.addr});
+        }
+      });
+    });
+    let allToks=Object.entries(tokMap).flatMap(([,items])=>items);
+    if(acc.tokOrder?.length){
+      allToks.sort((a,b)=>{
+        const ai=acc.tokOrder.indexOf(a.t.addr),bi=acc.tokOrder.indexOf(b.t.addr);
+        if(ai===-1&&bi===-1)return b.val-a.val;
+        if(ai===-1)return 1;if(bi===-1)return -1;return ai-bi;
+      });
+    }
+    acc._renderTokOrder=allToks;
+    // Stable index per token (chain+addr), used instead of acc.tokOrder.indexOf(t.addr)
+    // which returned -1 for every token until the first successful drag ever happened,
+    // making every token row share the same drag index and collide.
+    const tokenIndexByKey=new Map();
+    allToks.forEach((item,idx)=>{
+      const key=`${item.t.chain}::${item.t.addr}`;
+      if(!tokenIndexByKey.has(key)) tokenIndexByKey.set(key,idx);
+    });
+
     const isScanning=acc.wallets.some(w=>w.type==='crypto'&&w.scanning);
     const hasCrypto=acc.wallets.some(w=>w.type==='crypto');
   const manualWallets=acc.wallets.filter(w=>w.type==='manual'&&w.cat!=='cex');
@@ -242,7 +295,7 @@ function render(){
       const isSol = w.chain === 'sol';
       const offlineBadge=isOfflineMode?` <span class="offline-badge">offline</span>`:'';
       walletAndChainRows+=`<div class="wrow">
-        <div class="manual-ic">${svg(isSol ? 'banknote' : 'link',12,'1.75')}</div>
+        <div class="manual-ic">${walletChainIconHtml(isSol)}</div>
         <div class="wrow-info"><div class="wrow-name">${walletDisplayName(w)}</div><div class="wrow-addr">${walletMetaLabel(w)}${offlineBadge}</div></div>
         <div class="tright"><div class="tphp-total">${fmt(dexPhp)}</div></div>
         ${w.scanning?`<div class="spin-sm"></div>`:''}
@@ -285,30 +338,35 @@ function render(){
         });
       } else { wChainEntries.sort((a,b)=>b[1].totalPhp-a[1].totalPhp); }
       
-      wChainEntries.forEach(([chainName,c],ci)=>{
+      wChainEntries.forEach(([chainName,c])=>{
         const chainSafe=String(chainName).replace(/'/g,"\\'");
+        const ci=chainIndexByName.get(chainName);
         const headAddr=c.addrs?.[0]||'';
         const addrLabel=c.addrs?.length>1?`${c.addrs.length} wallets`:headAddr?short(headAddr):'wallet';
         const nativePrice=PRICES[c.sym]||0;
         walletAndChainRows+=`<div class="trow" data-drag-type="chain" data-drag-item="${ci}">
           <div class="drag-grip" onmousedown="gripDown(event,'chain',${acc.id},${ci})" ontouchstart="gripDown(event,'chain',${acc.id},${ci})">${svg('grip-vertical',14,'1.75')}</div>
-          <div class="tdot"></div>
+          ${chainIconHtml(chainName)}
           <div class="tinfo"><div class="tname">${chainName}<span class="chain-addr">${addrLabel}</span></div><div class="tsym">${fmtEach(nativePrice)}</div></div>
           <div class="tright"><div class="tbal">${fmtUiNumber(c.totalBal,TOKEN_DECIMALS,TOKEN_DECIMALS)} ${c.sym}</div><div class="tphp-native">${fmt(c.totalPhp)}</div></div>
           <button class="icon-btn" onclick="openTokModal(${acc.id},${c.wId},'${chainSafe}')">${svg('plus',11,'2')}</button>
         </div>`;
         
-        const toks=wTokMap[chainName]||[];
+        const toks=(wTokMap[chainName]||[]).slice().sort((a,b)=>{
+          const ai=tokenIndexByKey.get(`${a.t.chain}::${a.t.addr}`) ?? -1;
+          const bi=tokenIndexByKey.get(`${b.t.chain}::${b.t.addr}`) ?? -1;
+          return ai-bi;
+        });
         toks.forEach(({t,wId,val},ti)=>{
           const isLast=ti===toks.length-1;
           const tokenPrice=TPRICES[t.addr]??t.php??0;
-          const globalIdx=(acc.tokOrder||[]).indexOf(t.addr);
+          const globalIdx=tokenIndexByKey.get(`${t.chain}::${t.addr}`) ?? -1;
           walletAndChainRows+=`<div class="tok-indent" data-drag-type="token" data-drag-item="${globalIdx}">
             <div class="tokrow">
               <div class="drag-grip" style="padding-left:4px" onmousedown="gripDown(event,'token',${acc.id},${globalIdx})" ontouchstart="gripDown(event,'token',${acc.id},${globalIdx})">${svg('grip-vertical',14,'1.75')}</div>
               <div class="tok-line" style="height:${isLast?'50%':'100%'}"></div>
               <div class="tok-corner"></div>
-              <div class="tdot erc"></div>
+              ${tokenAvatarHtml(t.sym)}
               <div class="tinfo">
                 <div class="tname" style="font-size:12px">${t.sym}</div>
                 <div class="tsym">${t.name} | ${fmtEach(tokenPrice)}</div>
@@ -331,7 +389,7 @@ function render(){
       const total=cexWalletTotal(w);
       const offlineBadge=isOfflineMode?` <span class="offline-badge">offline</span>`:'';
       cexRows+=`<div class="wrow">
-        <div class="manual-ic">${svg('building-2',12,'1.75')}</div>
+        ${cexWalletIconHtml(w.name)}
         <div class="wrow-info"><div class="wrow-name">${walletDisplayName(w)}</div><div class="wrow-addr">${walletMetaLabel(w)}${offlineBadge}</div></div>
         <div class="tright"><div class="tphp-total">${fmt(total)}</div></div>
         <button class="dots-btn" onclick="toggleMenu(event,'${menuKey}')">${svg('ellipsis',14,'1.75')}</button>
@@ -345,7 +403,7 @@ function render(){
       if((w.toks||[]).length===0){
         cexRows+=`<div class="empty-row">No tokens yet.</div>`;
       } else {
-        (w.toks||[]).forEach(t=>{
+        (w.toks||[]).forEach((t,ti)=>{
           const tok=ensureCexTokenShape(t);
           const qty=num(tok.qty);
           const price=cexTokenPrice(tok);
@@ -353,8 +411,9 @@ function render(){
           const sub=qty!==null
             ? `${fmtQty(qty)} ${tok.sym} | ${price>0?`${fmt(price)} each`:'price unavailable'}`
             : 'Legacy manual total';
-          cexRows+=`<div class="cex-token-row">
-            <div class="tdot erc"></div>
+          cexRows+=`<div class="cex-token-row" data-drag-type="cextoken_${w.id}" data-drag-item="${ti}">
+            <div class="drag-grip" onmousedown="gripDown(event,'cextoken_${w.id}',${acc.id},${ti},${w.id})" ontouchstart="gripDown(event,'cextoken_${w.id}',${acc.id},${ti},${w.id})">${svg('grip-vertical',14,'1.75')}</div>
+            ${tokenAvatarHtml(tok.sym)}
             <div class="tinfo"><div class="cex-token-name">${tok.sym}<span class="chain-addr">${w.name}</span></div><div class="cex-token-sub">${sub}</div></div>
             <div class="manual-php">${fmt(total)}</div>
             <button class="icon-btn" onclick="openCexTokenValueModal(${acc.id},${w.id},${tok.id})">${svg('pencil',11,'1.75')}</button>
@@ -362,45 +421,6 @@ function render(){
           </div>`;
         });
       }
-    });
-
-    let chainEntries=Object.entries(chainMap);
-    if(acc.chainOrder?.length){
-      chainEntries.sort((a,b)=>{
-        const ai=acc.chainOrder.indexOf(a[0]),bi=acc.chainOrder.indexOf(b[0]);
-        if(ai===-1&&bi===-1)return b[1].totalPhp-a[1].totalPhp;
-        if(ai===-1)return 1;if(bi===-1)return -1;return ai-bi;
-      });
-    } else { chainEntries.sort((a,b)=>b[1].totalPhp-a[1].totalPhp); }
-    acc._renderChainOrder=chainEntries.map(([n])=>n);
-
-    let allToks=Object.entries(tokMap).flatMap(([,items])=>items);
-    acc.wallets.filter(w=>w.type==='crypto'&&w.chain==='sol'&&Array.isArray(w.toks)).forEach(w=>{
-      w.toks.forEach(t=>{
-        if(!tokMap['Solana'])tokMap['Solana']=[];
-        if(!tokMap['Solana'].some(x=>x.t.addr===t.addr)){
-          tokMap['Solana'].push({t,wId:w.id,val:t.bal*(TPRICES[t.addr]??t.php??0),wAddr:w.addr});
-        }
-      });
-    });
-    allToks=Object.entries(tokMap).flatMap(([,items])=>items);
-    if(acc.tokOrder?.length){
-      allToks.sort((a,b)=>{
-        const ai=acc.tokOrder.indexOf(a.t.addr),bi=acc.tokOrder.indexOf(b.t.addr);
-        if(ai===-1&&bi===-1)return b.val-a.val;
-        if(ai===-1)return 1;if(bi===-1)return -1;return ai-bi;
-      });
-    }
-    acc._renderTokOrder=allToks;
-    const tokenIndexByKey=new Map();
-    allToks.forEach((item,idx)=>{
-      const key=`${item.t.chain}::${item.t.addr}`;
-      if(!tokenIndexByKey.has(key)) tokenIndexByKey.set(key,idx);
-    });
-    const orderedTokMap={};
-    allToks.forEach(item=>{
-      if(!orderedTokMap[item.t.chain])orderedTokMap[item.t.chain]=[];
-      orderedTokMap[item.t.chain].push(item);
     });
 
     let manualRows='';

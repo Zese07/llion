@@ -221,9 +221,10 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); min-
 .tdot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .tdot.native { background: var(--acc-main, var(--green)); }
 .tdot.erc { background: var(--acc-dark, var(--text2)); }
+.tok-avatar { display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid; flex-shrink: 0; font-family: var(--mono); font-weight: 700; letter-spacing: -.2px; line-height: 1; }
 .tinfo { flex: 1; min-width: 0; }
 .tname { font-size: 13px; font-weight: 500; color: var(--text); }
-.tsym { font-family: var(--mono); font-size: 10px; color: var(--text2); margin-top: 1px; }
+.tsym { font-family: var(--mono); font-size: 10px; color: color-mix(in srgb, var(--text2) 82%, white 18%); margin-top: 1px; }
 .tright { text-align: right; }
 .tbal { font-family: var(--mono); font-size: 11px; color: var(--acc-main, var(--text)); }
 .tphp-native, .tphp-erc, .tphp-dim { font-family: var(--mono); font-size: 11px; color: var(--acc-dark, var(--text2)); margin-top: 1px; }
@@ -254,7 +255,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); min-
 .add-acc-btn:hover { border-color: var(--text3); color: var(--text); }
 
 .manual-amount-row { display: flex; align-items: center; padding: 9px 14px; gap: 9px; border-bottom: 1px solid var(--border); }
-.manual-ic { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 5px; background: var(--surface2); border: 1px solid var(--acc-dark, var(--border)); flex-shrink: 0; color: var(--acc-main, var(--text3)); }
+.manual-ic { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 5px; background: var(--surface2); flex-shrink: 0; color: var(--acc-main, var(--text3)); }
 .manual-ic svg { width: 13px; height: 13px; stroke-width: 1.75; }
 .manual-info { flex: 1; }
 .manual-label { font-size: 12px; color: var(--text); font-weight: 500; }
@@ -263,10 +264,21 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); min-
 
 .cex-token-row { display: flex; align-items: center; gap: 9px; padding: 8px 14px 8px 34px; border-bottom: 1px solid var(--border); }
 .cex-token-name { font-size: 12px; color: var(--text); }
-.cex-token-sub { font-size: 10px; color: var(--text2); margin-top: 1px; }
+.cex-token-sub { font-size: 10px; color: color-mix(in srgb, var(--text2) 82%, white 18%); margin-top: 1px; }
 
-.drag-grip { display: flex; align-items: center; justify-content: center; color: var(--border); cursor: grab; padding: 0 5px 0 0; flex-shrink: 0; user-select: none; transition: color .15s; touch-action: none; }
-.drag-grip svg { width: 13px; height: 13px; }
+.cex-ic { font-family: var(--mono); font-weight: 700; font-size: 11px; letter-spacing: -.3px; }
+.cex-ic-generic { background: var(--surface2); color: var(--acc-main, var(--purple)); }
+.cex-ic-wrap { padding: 0; overflow: hidden; }
+.cex-ic-mono { display: flex; align-items: center; justify-content: center; border-radius: 5px; font-family: var(--mono); font-weight: 700; flex-shrink: 0; line-height: 1; }
+
+.field-wrap { position: relative; }
+.brand-dd { position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); max-height: 224px; overflow-y: auto; z-index: 60; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.brand-dd-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; background: none; border: none; text-align: left; cursor: pointer; font-family: var(--sans); font-size: 12px; color: var(--text3); transition: background .1s, color .1s; }
+.brand-dd-item:hover, .brand-dd-item:focus { background: var(--border); color: var(--text); outline: none; }
+
+.drag-grip { display: flex; align-items: center; justify-content: center; align-self: stretch; color: var(--border); cursor: grab; padding: 0 5px 0 0; flex-shrink: 0; user-select: none; transition: color .15s; touch-action: none; }
+.drag-grip svg { width: 13px; height: 13px; display: block; }
+.trow img, .wrow img, .tokrow img { vertical-align: middle; }
 .drag-grip:hover { color: var(--text2); }
 .drag-grip:active { cursor: grabbing; }
 .dragging-ghost { opacity: .85; box-shadow: 0 8px 28px rgba(0,0,0,.6); border-radius: 6px; pointer-events: none; }

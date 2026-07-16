@@ -19,7 +19,15 @@ document.getElementById('rename-wallet-input').addEventListener('keydown',e=>{if
 document.getElementById('goal-input').addEventListener('keydown',e=>{if(e.key==='Enter')confirmGoalUpdate();if(e.key==='Escape')closeGoalModal();});
 document.getElementById('cw-addr').addEventListener('input',checkWalletFormReady);
 document.getElementById('cw-sol-addr').addEventListener('input',checkWalletFormReady);
-document.getElementById('mw-name').addEventListener('input',checkWalletFormReady);
+document.getElementById('mw-name').addEventListener('input',()=>{ if(selectedWalletType==='cex') onCexNameInput(); else checkWalletFormReady(); });
+document.getElementById('mw-name').addEventListener('focus',()=>{ if(selectedWalletType==='cex') showCexBrandDropdown(); });
+document.getElementById('mw-name').addEventListener('keydown',e=>{ if(e.key==='Escape') hideCexBrandDropdown(); });
+document.addEventListener('click',e=>{
+  const dd=document.getElementById('cex-brand-dd');
+  if(!dd||dd.style.display==='none') return;
+  if(e.target.id==='mw-name'||dd.contains(e.target)) return;
+  hideCexBrandDropdown();
+});
 document.getElementById('cex-token-name').addEventListener('input',()=>{ if(selectedWalletType==='cex') onCexAddTokInput(); else checkWalletFormReady(); });
 document.getElementById('mw-amount').addEventListener('input',()=>{ if(selectedWalletType==='cex') updateCexAddPreview(); else checkWalletFormReady(); });
 document.getElementById('cex-add-match').addEventListener('change',onCexAddMatchChange);

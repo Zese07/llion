@@ -578,6 +578,47 @@ function onCexAddTokInput(){
 
 
 // ============================================================
+// CEX EXCHANGE PICKER — Type-to-filter dropdown of exchanges shown
+// under the Wallet Name field when adding a CEX wallet. Exchanges are
+// listed alphabetically; with no filter text only the first 4 show,
+// typing reveals matches from the full list.
+// ============================================================
+function renderCexBrandDropdown(filterText){
+  const dd=document.getElementById('cex-brand-dd');
+  if(!dd) return;
+  const f=String(filterText||'').trim().toLowerCase();
+  const matches=(f ? CEX_BRANDS.filter(b=>b.name.toLowerCase().includes(f)) : CEX_BRANDS.slice(0,4));
+  if(!matches.length){ dd.style.display='none'; dd.innerHTML=''; return; }
+  dd.innerHTML=matches.map(b=>`
+    <button type="button" class="brand-dd-item" onmousedown="event.preventDefault();selectCexBrand('${b.id}')">
+      ${cexBrandLogoHtml(b,18)}
+      <span>${escAttr(b.name)}</span>
+    </button>`).join('');
+  dd.style.display='block';
+}
+function showCexBrandDropdown(){
+  renderCexBrandDropdown(document.getElementById('mw-name').value);
+}
+function hideCexBrandDropdown(){
+  const dd=document.getElementById('cex-brand-dd');
+  if(dd) dd.style.display='none';
+}
+function onCexNameInput(){
+  renderCexBrandDropdown(document.getElementById('mw-name').value);
+  checkWalletFormReady();
+}
+function selectCexBrand(id){
+  const b=CEX_BRANDS.find(x=>x.id===id);
+  if(!b) return;
+  const input=document.getElementById('mw-name');
+  input.value=b.name;
+  hideCexBrandDropdown();
+  input.focus();
+  checkWalletFormReady();
+}
+
+
+// ============================================================
 // ADD WALLET — Add-wallet modal: DEX/CEX/Manual type selection, address scanning
 // ============================================================
 function openAddWalletType(accId){
@@ -595,6 +636,7 @@ function openAddWalletType(accId){
   document.getElementById('cex-token-name').value='';
   document.getElementById('mw-amount').value='';
   resetCexAddLookupUI();
+  hideCexBrandDropdown();
   document.getElementById('mw-name-lbl').textContent='Label';
   document.getElementById('mw-amount-lbl').textContent=`Amount (${moneySymbol()})`;
   document.getElementById('cex-token-lbl').textContent='Token Symbol';
@@ -638,6 +680,8 @@ function selectWalletType(type){
     selectedCat=null;
     resetCexAddLookupUI();
     setTimeout(()=>document.getElementById('mw-name').focus(),50);
+  } else {
+    hideCexBrandDropdown();
   }
   if(type==='manual') buildCatGrid();
   if(type==='dex') setDexChain('evm'); // default to EVM on open

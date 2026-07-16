@@ -55,6 +55,98 @@ function svg(n,s=14,sw='1.75'){
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }
 
+const CHAIN_LOGO_SLUG = {
+  'Ethereum':'ethereum','BNB Chain':'smartchain','Base':'base','Polygon':'polygon',
+  'Arbitrum One':'arbitrum','Optimism':'optimism','Celo':'celo','Avax C-Chain':'avalanchec',
+  'Mantle':'mantle','Linea':'linea','Blast':'blast','Gnosis':'xdai','Moonbeam':'moonbeam',
+  'Moonriver':'moonriver','opBNB':'opbnb','Scroll':'scroll','Sonic':'sonic','XDC':'xdc',
+  'Sei':'sei','Robinhood Chain':'robinhoodchain','Solana':'solana',
+};
+function chainIconUrl(chainName){
+  const slug=CHAIN_LOGO_SLUG[chainName];
+  return slug?`https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${slug}/info/logo.png`:null;
+}
+function escAttr(s){
+  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+}
+
+function imgWithFallback(url, fallbackHtml, style){
+  return `<img src="${url}" alt="" style="${style}" onerror="this.outerHTML='${escAttr(fallbackHtml)}'">`;
+}
+function chainIconHtml(chainName){
+  const url=chainIconUrl(chainName);
+  const fallback=`<div class="tdot native"></div>`;
+  if(!url) return fallback;
+  return imgWithFallback(url, fallback, 'width:16px;height:16px;border-radius:50%;object-fit:cover;flex:none');
+}
+
+function walletChainIconHtml(isSol){
+  const url=chainIconUrl(isSol?'Solana':'Ethereum');
+  const fallback=svg(isSol?'banknote':'link',12,'1.75');
+  if(!url) return fallback;
+  return imgWithFallback(url, fallback, 'width:16px;height:16px;border-radius:50%;object-fit:cover;flex:none');
+}
+
+// ============================================================
+// TOKEN AVATARS — Deterministic initials-based fallback for tokens
+// without a resolvable logo (replaces the plain grey dot)
+// ============================================================
+const AVATAR_PALETTE = ['#4ade80','#60a5fa','#a78bfa','#fbbf24','#f87171','#34d399','#818cf8','#f472b6','#38bdf8','#facc15'];
+function hashStr(s){
+  let h=0;
+  for(let i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))|0; }
+  return Math.abs(h);
+}
+function tokenInitials(sym){
+  const clean=String(sym||'').replace(/[^a-zA-Z0-9]/g,'');
+  if(!clean) return '?';
+  if(clean.length===1) return clean.toUpperCase();
+  return (clean[0]+clean[1]).toUpperCase();
+}
+function tokenAvatarHtml(sym,size=17){
+  const initials=tokenInitials(sym);
+  const color=AVATAR_PALETTE[hashStr(String(sym||'').toUpperCase())%AVATAR_PALETTE.length];
+  const fontSize=Math.max(7,Math.round(size*0.36));
+  return `<div class="tok-avatar" style="width:${size}px;height:${size}px;font-size:${fontSize}px;background:${color}20;color:${color};border-color:${color}55">${escAttr(initials)}</div>`;
+}
+
+// ============================================================
+// CEX BRAND ICONS — Top 10 exchanges with local SVG logos
+// (put files at images/{id}.svg — see list below), falling back
+// to a colored letter-monogram for anything unrecognized
+// ============================================================
+const CEX_BRANDS = [
+  { id:'binance',  name:'Binance',           match:/binance/i,          label:'B',  color:'#F0B90B' },
+  { id:'bitget',   name:'Bitget',            match:/bitget/i,           label:'BG', color:'#00F0FF' },
+  { id:'bybit',    name:'Bybit',             match:/bybit/i,            label:'BY', color:'#F7A600' },
+  { id:'coinbase', name:'Coinbase Exchange', match:/coinbase/i,         label:'C',  color:'#0052FF' },
+  { id:'gate',     name:'Gate',              match:/gate\.?io|^gate$/i, label:'G',  color:'#00D0C6' },
+  { id:'htx',      name:'HTX',               match:/htx|huobi/i,       label:'H',  color:'#2CA6E0' },
+  { id:'kucoin',   name:'KuCoin',            match:/kucoin/i,           label:'KC', color:'#24AE8F' },
+  { id:'mexc',     name:'MEXC',              match:/mexc/i,             label:'M',  color:'#2FD9AC' },
+  { id:'okx',      name:'OKX',               match:/\bokx\b|okex/i,    label:'OK', color:'#7FDBFF' },
+  { id:'upbit',    name:'Upbit',             match:/upbit/i,            label:'UP', color:'#1261C4' },
+];
+// Filenames expected: images/binance.svg, images/coinbase.svg, images/upbit.svg,
+// images/okx.svg, images/bybit.svg, images/bitget.svg, images/gate.svg,
+// images/kucoin.svg, images/mexc.svg, images/htx.svg
+function cexBrandMonoHtml(brand,size){
+  return `<div class="cex-ic-mono" style="width:${size}px;height:${size}px;font-size:${Math.max(7,Math.round(size*0.38))}px;background:${brand.color}20;color:${brand.color};border-color:${brand.color}55">${escAttr(brand.label)}</div>`;
+}
+function cexBrandLogoHtml(brand,size=18){
+  const fallback=cexBrandMonoHtml(brand,size);
+  return imgWithFallback(`images/${brand.id}.svg`, fallback, `width:${size}px;height:${size}px;object-fit:contain;flex:none;border-radius:5px`);
+}
+function cexWalletIconHtml(name){
+  const n=String(name||'');
+  const brand=CEX_BRANDS.find(b=>b.match.test(n));
+  if(brand){
+    return `<div class="manual-ic cex-ic-wrap">${cexBrandLogoHtml(brand,17)}</div>`;
+  }
+  const letter=(n.trim()[0]||'#').toUpperCase();
+  return `<div class="manual-ic cex-ic cex-ic-generic">${escAttr(letter)}</div>`;
+}
+
 const MANUAL_CATS = [
   { id:'cash',     label:'Cash',       lucide:'banknote' },
   { id:'ewallet',  label:'E-Wallet',   lucide:'smartphone' },
